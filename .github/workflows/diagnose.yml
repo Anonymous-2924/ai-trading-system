@@ -38,7 +38,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --ignore-installed PyYAML requests PyYAML python-dotenv
+          # Only what check_alpaca.py transitively needs. alpaca_client imports
+          # pandas, and demo_data imports numpy, so both are required even
+          # though this script never builds a frame. crewai and streamlit are
+          # deliberately skipped to keep the diagnostic fast.
+          pip install --ignore-installed PyYAML \
+            "numpy>=2.0,<3" "pandas>=2.2" requests python-dotenv
+
+      - name: Confirm the script imports before we rely on it
+        run: python -c "import runpy, sys; sys.argv=['x','--help']; runpy.run_path('scripts/check_alpaca.py', run_name='__main__')" > /dev/null
 
       - name: Mask and export every student's secrets
         env:
