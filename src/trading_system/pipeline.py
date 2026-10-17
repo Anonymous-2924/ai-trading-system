@@ -396,11 +396,16 @@ def _finalise(
     account: Optional[dict] = None,
 ) -> None:
     """Append the daily-log row.  Runs even when everything above failed."""
-    if account is None and client is not None:
+    # Re-read the account when orders went out: the snapshot taken before
+    # sizing is pre-trade, so its cash and buying power no longer describe the
+    # account by the time the row is written.
+    submitted_any = any(o.get("submitted") for o in result.submitted)
+    if client is not None and (account is None or submitted_any):
         try:
             account = client.get_account()
         except Exception:
-            account = None
+            # Keep whatever pre-trade snapshot we had rather than losing the row.
+            pass
     result.account = dict(account) if account else None
     if result.account is not None:
         result.account.setdefault("starting_equity", student.starting_equity)
