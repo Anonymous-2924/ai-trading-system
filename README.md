@@ -531,9 +531,19 @@ Two guarantees, both tested:
 
 ### `.github/workflows/trading-analysis.yml`
 
-- **Schedule:** weekdays at 14:45 UTC (just after the US open) and 20:15 UTC
-  (after the close). Plus `workflow_dispatch` with inputs for `mode`,
-  `students`, `model`, `max_llm_symbols` and `aggression`.
+- **Schedule:** two runs every weekday.
+
+  | Cron (UTC) | IST | US Eastern | What it does |
+  | --- | --- | --- | --- |
+  | `30 19 * * 1-5` | 01:00 next day | 15:30 EDT / 14:30 EST — **market open** | The trading run. Full analysis, places orders. |
+  | `30 21 * * 1-5` | 03:00 next day | 17:30 EDT / 16:30 EST — **market closed** | Closing-equity snapshot. `--no-llm`, no orders, zero LLM quota. |
+
+  Both times are deliberately far from the EDT/EST boundary, so they stay on
+  the correct side of the opening and closing bells when the US clocks change
+  in March and November.
+
+  Plus `workflow_dispatch` with inputs for `mode`, `students`, `model`,
+  `max_llm_symbols` and `aggression`.
 - **Matrix** over the three students with **`max-parallel: 1`**, so each uses
   its own Alpaca account and parallel jobs cannot exhaust the LLM allowance.
 - **Secrets:** `OLLAMA_API_KEY`, `ALPACA_API_KEY_1/2/3`,
@@ -547,16 +557,29 @@ Two guarantees, both tested:
   the committed file does not already contain, so a re-run cannot duplicate a
   day, and it rebuilds the Markdown mirrors from the merged CSVs.
 
-**Only `mode=execute` sets `REQUIRE_HUMAN_APPROVAL=false`:**
+**Only `mode=execute` sets `REQUIRE_HUMAN_APPROVAL=false`**, and the workflow
+decides that in exactly one place:
 
-```yaml
-RUN_MODE: ${{ inputs.mode || 'analyse' }}
-REQUIRE_HUMAN_APPROVAL: ${{ inputs.mode == 'execute' && 'false' || 'true' }}
+```bash
+if [ "$RUN_MODE" = "execute" ]; then
+  REQUIRE_HUMAN_APPROVAL=false
+else
+  REQUIRE_HUMAN_APPROVAL=true
+fi
 ```
 
-Orders are submitted only when **both** conditions hold. Scheduled runs have
-no `inputs`, so `mode` falls back to `analyse` and **a cron run never places a
-trade**. To trade, dispatch the workflow manually and choose `execute`.
+Orders are submitted only when **both** conditions hold. `RUN_MODE` is chosen
+by this precedence:
+
+1. The 21:30 snapshot is **always** `analyse` — it can never trade, whatever
+   else is configured.
+2. A manual *Run workflow* uses whichever `mode` the human picked.
+3. Otherwise the 19:30 trading cron uses the repository variable
+   `SCHEDULED_MODE`, defaulting to **`execute`**.
+
+**To pause automatic trading** without touching the code, add a repository
+variable `SCHEDULED_MODE` = `analyse` (Settings → Secrets and variables →
+Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 

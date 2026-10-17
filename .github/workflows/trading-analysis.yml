@@ -12,10 +12,26 @@ name: Trading analysis
 
 on:
   schedule:
-    # 14:45 UTC — about 15 minutes after the US cash open (09:30 ET).
-    - cron: "45 14 * * 1-5"
-    # 20:15 UTC — after the US close, for the end-of-day equity snapshot.
-    - cron: "15 20 * * 1-5"
+    # ---------------------------------------------------------------------
+    # Both times are chosen so they land correctly in BOTH US daylight time
+    # (EDT, UTC-4) and US standard time (EST, UTC-5). The clocks change in
+    # early November and early March; a cron that is correct in one is often
+    # wrong in the other, so neither of these sits near a boundary.
+    #
+    #   19:30 UTC  =  15:30 ET (EDT)  /  14:30 ET (EST)   <- market OPEN in both
+    #   21:30 UTC  =  17:30 ET (EDT)  /  16:30 ET (EST)   <- market CLOSED in both
+    #
+    # In IST (UTC+5:30) that is 01:00 and 03:00 the following morning.
+    # ---------------------------------------------------------------------
+
+    # THE TRADING RUN. Fires while the US market is open, so market orders
+    # fill in the same session instead of queuing overnight.
+    - cron: "30 19 * * 1-5"
+
+    # THE END-OF-DAY SNAPSHOT. Analysis is skipped entirely (--no-llm, no
+    # orders); this exists only to append the closing equity to each member's
+    # daily log. It costs zero LLM quota.
+    - cron: "30 21 * * 1-5"
   workflow_dispatch:
     inputs:
       mode:
@@ -140,13 +156,17 @@ jobs:
             echo "::warning title=LLM check failed::The run will fall back to the deterministic rule engine."
 
       - name: Run the pipeline
+        id: run
         if: steps.creds.outputs.has_creds == 'true'
         env:
-          RUN_MODE: ${{ inputs.mode || 'analyse' }}
-          # THE EXECUTION GATE. Orders are submitted only when BOTH
-          # RUN_MODE=execute and REQUIRE_HUMAN_APPROVAL=false. Scheduled runs
-          # have no `inputs`, so mode is analyse and this stays 'true'.
-          REQUIRE_HUMAN_APPROVAL: ${{ inputs.mode == 'execute' && 'false' || 'true' }}
+          # Which cron fired, if any. Empty for a manual dispatch.
+          FIRED_SCHEDULE: ${{ github.event.schedule }}
+          # Set by a manual "Run workflow"; empty on a scheduled run.
+          DISPATCH_MODE: ${{ inputs.mode }}
+          # Optional repository variable (Settings -> Secrets and variables ->
+          # Actions -> Variables). Set it to 'analyse' to pause automatic
+          # trading without editing this file. Defaults to 'execute'.
+          SCHEDULED_MODE: ${{ vars.SCHEDULED_MODE }}
           LLM_PROVIDER: ollama_cloud
           LLM_MODEL: ${{ inputs.model }}
           MAX_LLM_SYMBOLS: ${{ inputs.max_llm_symbols || '12' }}
@@ -164,9 +184,34 @@ jobs:
             esac
           fi
 
-          echo "mode=$RUN_MODE require_human_approval=$REQUIRE_HUMAN_APPROVAL"
+          EXTRA=""
+          if [ "$FIRED_SCHEDULE" = "30 21 * * 1-5" ]; then
+            # The end-of-day snapshot: record closing equity, decide nothing,
+            # trade nothing, spend no LLM quota.
+            RUN_MODE=analyse
+            EXTRA="--no-llm"
+            echo "::notice::End-of-day snapshot — recording equity only."
+          elif [ -n "$DISPATCH_MODE" ]; then
+            RUN_MODE="$DISPATCH_MODE"          # a human chose this
+          else
+            RUN_MODE="${SCHEDULED_MODE:-execute}"
+          fi
+
+          # THE EXECUTION GATE, and the only place it is decided: orders are
+          # submitted when and only when RUN_MODE=execute, which is the only
+          # thing that sets REQUIRE_HUMAN_APPROVAL=false.
+          if [ "$RUN_MODE" = "execute" ]; then
+            REQUIRE_HUMAN_APPROVAL=false
+          else
+            REQUIRE_HUMAN_APPROVAL=true
+          fi
+          export RUN_MODE REQUIRE_HUMAN_APPROVAL
+
+          echo "mode=$RUN_MODE require_human_approval=$REQUIRE_HUMAN_APPROVAL $EXTRA"
+          echo "effective_mode=$RUN_MODE" >> "$GITHUB_OUTPUT"
+
           python scripts/run_trading.py \
-            --students "${{ matrix.student }}" \
+            --students "${{ matrix.student }}" $EXTRA \
             2>&1 | tee "run-${{ matrix.student }}.log"
 
       - name: Write the job summary
@@ -175,8 +220,9 @@ jobs:
           {
             echo "## ${{ matrix.student }}"
             echo ""
-            echo "- mode: \`${{ inputs.mode || 'analyse' }}\`"
-            echo "- orders auto-submitted: \`${{ inputs.mode == 'execute' }}\`"
+            MODE="${{ steps.run.outputs.effective_mode }}"
+            echo "- mode: \`${MODE:-skipped}\`"
+            echo "- orders auto-submitted: \`$([ "$MODE" = execute ] && echo true || echo false)\`"
             echo "- aggression: \`${{ inputs.aggression || '0.75' }}\`"
             echo ""
             echo '```'
