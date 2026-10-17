@@ -219,3 +219,32 @@ class TestYamlBooleanTickerTrap:
     def test_every_symbol_is_sector_mapped(self, config_path):
         """An unmapped symbol lands in 'unknown' and escapes the sector cap."""
         assert load_config(config_path).validate_universe() == []
+
+
+class TestMissingConfigIsLoud:
+    """A missing file used to yield a config with no students, so the run
+    quietly did nothing. The diagnose workflow printed '0/0 accounts' and gave
+    no clue why."""
+
+    def test_missing_default_path_raises(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CONFIG_PATH", raising=False)
+        with pytest.raises(FileNotFoundError, match="config file not found"):
+            load_config()
+
+    def test_the_error_names_the_resolved_path_and_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CONFIG_PATH", raising=False)
+        with pytest.raises(FileNotFoundError) as excinfo:
+            load_config()
+        message = str(excinfo.value)
+        assert "resolved to" in message and "working directory" in message
+
+    def test_missing_explicit_path_still_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_config(str(tmp_path / "nope.yaml"))
+
+    def test_a_loaded_config_records_where_it_came_from(self, config_path):
+        cfg = load_config(config_path)
+        assert cfg.config_path.endswith("config.yaml")
+        assert cfg.students, "a healthy config must define students"

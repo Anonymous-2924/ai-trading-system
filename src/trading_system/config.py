@@ -163,6 +163,7 @@ class LLMConfig:
 @dataclass
 class AppConfig:
     raw: Dict[str, Any] = field(default_factory=dict)
+    config_path: str = ""
     mode: str = "analyse"
     require_human_approval: bool = True
     demo_mode: bool = False
@@ -300,8 +301,14 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
     p = Path(cfg_path)
     if p.is_file():
         raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    elif clean(path):
-        raise FileNotFoundError(f"config file not found: {cfg_path}")
+    else:
+        # Previously a missing file at the DEFAULT path was swallowed, which
+        # produced a config with no students and a run that quietly did
+        # nothing. Always say so.
+        raise FileNotFoundError(
+            f"config file not found: {cfg_path!r} (resolved to {p.resolve()}, "
+            f"working directory {Path.cwd()}). Set CONFIG_PATH or pass --config."
+        )
 
     run = raw.get("run", {}) or {}
     aggression = env_float("AGGRESSION", float(raw.get("aggression", 0.75)))
@@ -384,6 +391,7 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
 
     cfg = AppConfig(
         raw=raw,
+        config_path=str(p.resolve()),
         mode=env_str("RUN_MODE", str(run.get("mode", "analyse"))).lower(),
         require_human_approval=env_bool(
             "REQUIRE_HUMAN_APPROVAL", bool(run.get("require_human_approval", True))

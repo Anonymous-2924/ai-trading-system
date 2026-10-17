@@ -125,11 +125,35 @@ def main() -> int:
     args = p.parse_args()
 
     cfg = load_config(args.config)
-    wanted = [s.strip() for s in args.students.split(",") if s.strip()]
-    students = [s for s in cfg.students if not wanted or s.id in wanted]
 
     print()
-    print(f"Alpaca endpoint in use: {cfg.alpaca_base_url}")
+    print(f"config loaded from  : {cfg.config_path}")
+    print(f"students defined    : {[s.id for s in cfg.students] or 'NONE'}")
+    print(f"Alpaca endpoint     : {cfg.alpaca_base_url}")
+    print()
+
+    if not cfg.students:
+        print("ERROR: the config defines no students, so there is nothing to")
+        print(f"       inspect. Check that {cfg.config_path} exists and has a")
+        print("       'students:' section.")
+        return 2
+
+    # "all", "*", "universe" and blank all mean everyone — the trading
+    # workflow's students input defaults to "all", so accept the same word.
+    raw = (args.students or "").strip().lower()
+    if raw in {"", "all", "*", "universe"}:
+        students = list(cfg.students)
+    else:
+        wanted = [x.strip().lower() for x in raw.split(",") if x.strip()]
+        known = {s.id.lower(): s for s in cfg.students}
+        unknown = [w for w in wanted if w not in known]
+        if unknown:
+            print(f"ERROR: unknown student id(s): {', '.join(unknown)}")
+            print(f"       known ids: {', '.join(known)}")
+            print("       Leave the box blank or type 'all' for everyone.")
+            return 2
+        students = [known[w] for w in wanted]
+
     print("Open app.alpaca.markets and compare the account number in the")
     print("top-left corner against the ACCOUNT NUMBER printed below.")
     print()
