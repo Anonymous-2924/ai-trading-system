@@ -158,3 +158,64 @@ class TestExecutionGate:
     def test_env_bool(self, monkeypatch, raw, expected):
         monkeypatch.setenv("SOME_FLAG", raw)
         assert env_bool("SOME_FLAG", True) is (True if expected is None else expected)
+
+
+class TestYamlBooleanTickerTrap:
+    """PyYAML follows YAML 1.1, where a bare ON parses as the boolean True.
+
+    ON Semiconductor is in student_3's high-beta sleeve. Unquoted, it became
+    the string "TRUE" and the system submitted an order for a ticker that does
+    not exist — caught in a live run on 2026-10-17.
+    """
+
+    def test_on_survives_as_a_string(self, config_path):
+        cfg = load_config(config_path)
+        symbols = cfg.student("student_3").symbols
+        assert "ON" in symbols, symbols
+        assert "TRUE" not in symbols
+
+    def test_on_keeps_its_sector_so_the_cap_still_binds(self, config_path):
+        assert load_config(config_path).sector_of("ON") == "technology"
+
+    def test_every_ticker_in_the_file_is_quoted(self, config_path):
+        """Catch the trap at its source, for any future ticker."""
+        import yaml
+
+        raw = yaml.safe_load(open(config_path, encoding="utf-8"))
+        for student in raw["students"]:
+            for key in ("high_beta", "diversified"):
+                for ticker in student[key]:
+                    assert isinstance(ticker, str), (
+                        f"{student['id']}.{key} contains {ticker!r} "
+                        f"({type(ticker).__name__}); quote it in the YAML"
+                    )
+        for key in raw["sectors"]:
+            assert isinstance(key, str), f"sector key {key!r} must be quoted"
+
+    @pytest.mark.parametrize("ticker", ["ON", "OFF", "YES", "NO", "TRUE", "FALSE"])
+    def test_these_tickers_are_booleans_when_unquoted(self, ticker):
+        """Documents the trap, so the list in the error message stays honest."""
+        import yaml
+
+        assert isinstance(yaml.safe_load(f"[{ticker}]")[0], bool)
+
+    def test_clean_symbol_refuses_a_boolean(self):
+        from trading_system.config import clean_symbol
+
+        with pytest.raises(ValueError, match="parsed as a BOOLEAN"):
+            clean_symbol(True, "students[student_3].high_beta")
+
+    def test_clean_symbol_message_says_how_to_fix_it(self):
+        from trading_system.config import clean_symbol
+
+        with pytest.raises(ValueError, match="Quote it in config.yaml"):
+            clean_symbol(False, "sectors")
+
+    def test_clean_symbol_passes_ordinary_tickers_through(self):
+        from trading_system.config import clean_symbol
+
+        assert clean_symbol("  nvda\n", "x") == "NVDA"
+
+    def test_every_symbol_is_sector_mapped(self, config_path):
+        """An unmapped symbol lands in 'unknown' and escapes the sector cap."""
+        assert load_config(config_path).validate_universe() == []

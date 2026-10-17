@@ -101,72 +101,77 @@ llm:
   # announced loudly — never silently.
   fallback_to_rule_engine: true
 
+# Tickers are QUOTED on purpose: YAML 1.1 reads bare ON, OFF, YES, NO, TRUE
+# and FALSE as booleans. Unquoted, ON (ON Semiconductor) parses as `true`.
 students:
   - id: student_1
     name: Student 1
     key_env: ALPACA_API_KEY_1
     secret_env: ALPACA_SECRET_KEY_1
     starting_equity: 100000.0
-    high_beta: [TSLA, NVDA, PLTR, COIN, SMCI]
-    diversified: [AAPL, MSFT, JNJ, JPM, XOM, PG, V, CAT, UNH]
+    high_beta: ["TSLA", "NVDA", "PLTR", "COIN", "SMCI"]
+    diversified: ["AAPL", "MSFT", "JNJ", "JPM", "XOM", "PG", "V", "CAT", "UNH"]
   - id: student_2
     name: Student 2
     key_env: ALPACA_API_KEY_2
     secret_env: ALPACA_SECRET_KEY_2
     starting_equity: 100000.0
-    high_beta: [AMD, MRNA, ENPH, RIVN, DKNG]
-    diversified: [GOOGL, AMZN, KO, BAC, CVX, HD, MRK, HON, COST]
+    high_beta: ["AMD", "MRNA", "ENPH", "RIVN", "DKNG"]
+    diversified: ["GOOGL", "AMZN", "KO", "BAC", "CVX", "HD", "MRK", "HON", "COST"]
   - id: student_3
     name: Student 3
     key_env: ALPACA_API_KEY_3
     secret_env: ALPACA_SECRET_KEY_3
     starting_equity: 100000.0
-    high_beta: [MARA, AFRM, UPST, CCL, ON]
-    diversified: [META, ORCL, PEP, WFC, LMT, DIS, ABBV, NKE, WMT]
+    high_beta: ["MARA", "AFRM", "UPST", "CCL", "ON"]
+    diversified: ["META", "ORCL", "PEP", "WFC", "LMT", "DIS", "ABBV", "NKE", "WMT"]
 
-# Sector map used by the sector-exposure cap.  Unmapped symbols fall into
+# Sector map used by the sector-exposure cap.
+# Keys are QUOTED on purpose: YAML 1.1 reads bare ON, OFF, YES, NO, TRUE and
+# FALSE as booleans, so an unquoted ON (ON Semiconductor) becomes `true` and
+# the symbol silently turns into "TRUE". config.py now rejects that outright.  Unmapped symbols fall into
 # "unknown", which shares a single bucket — so an unmapped name is treated
 # conservatively rather than being exempt from the cap.
 sectors:
-  TSLA: consumer_discretionary
-  NVDA: technology
-  PLTR: technology
-  COIN: financials
-  SMCI: technology
-  AAPL: technology
-  MSFT: technology
-  JNJ: healthcare
-  JPM: financials
-  XOM: energy
-  PG: consumer_staples
-  V: financials
-  CAT: industrials
-  UNH: healthcare
-  AMD: technology
-  MRNA: healthcare
-  ENPH: technology
-  RIVN: consumer_discretionary
-  DKNG: consumer_discretionary
-  GOOGL: communication_services
-  AMZN: consumer_discretionary
-  KO: consumer_staples
-  BAC: financials
-  CVX: energy
-  HD: consumer_discretionary
-  MRK: healthcare
-  HON: industrials
-  COST: consumer_staples
-  MARA: financials
-  AFRM: financials
-  UPST: financials
-  CCL: consumer_discretionary
-  ON: technology
-  META: communication_services
-  ORCL: technology
-  PEP: consumer_staples
-  WFC: financials
-  LMT: industrials
-  DIS: communication_services
-  ABBV: healthcare
-  NKE: consumer_discretionary
-  WMT: consumer_staples
+  "TSLA": consumer_discretionary
+  "NVDA": technology
+  "PLTR": technology
+  "COIN": financials
+  "SMCI": technology
+  "AAPL": technology
+  "MSFT": technology
+  "JNJ": healthcare
+  "JPM": financials
+  "XOM": energy
+  "PG": consumer_staples
+  "V": financials
+  "CAT": industrials
+  "UNH": healthcare
+  "AMD": technology
+  "MRNA": healthcare
+  "ENPH": technology
+  "RIVN": consumer_discretionary
+  "DKNG": consumer_discretionary
+  "GOOGL": communication_services
+  "AMZN": consumer_discretionary
+  "KO": consumer_staples
+  "BAC": financials
+  "CVX": energy
+  "HD": consumer_discretionary
+  "MRK": healthcare
+  "HON": industrials
+  "COST": consumer_staples
+  "MARA": financials
+  "AFRM": financials
+  "UPST": financials
+  "CCL": consumer_discretionary
+  "ON": technology
+  "META": communication_services
+  "ORCL": technology
+  "PEP": consumer_staples
+  "WFC": financials
+  "LMT": industrials
+  "DIS": communication_services
+  "ABBV": healthcare
+  "NKE": consumer_discretionary
+  "WMT": consumer_staples

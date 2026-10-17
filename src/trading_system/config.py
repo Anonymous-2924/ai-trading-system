@@ -30,6 +30,31 @@ def clean(value: Any) -> str:
     return str(value).strip().strip("\r\n").strip()
 
 
+#: Tickers that YAML 1.1 silently turns into booleans when left unquoted.
+#: ``ON`` is ON Semiconductor; the rest are listed so the error message can
+#: name them.
+YAML_BOOLEAN_TICKERS = ("ON", "OFF", "YES", "NO", "TRUE", "FALSE")
+
+
+def clean_symbol(value: Any, where: str) -> str:
+    """Clean a ticker, refusing the YAML-boolean trap.
+
+    PyYAML follows YAML 1.1, where a bare ``ON`` parses as ``True``.  Left
+    alone, ON Semiconductor becomes the string ``"TRUE"`` and the system
+    cheerfully sends orders for a ticker that does not exist — which is
+    exactly what happened before this check was added.  Quote the ticker in
+    the YAML and the problem disappears.
+    """
+    if isinstance(value, bool):
+        raise ValueError(
+            f"{where}: the ticker {value!r} was parsed as a BOOLEAN, not a string. "
+            f"YAML 1.1 reads bare {', '.join(YAML_BOOLEAN_TICKERS)} as booleans, so "
+            f"an unquoted ON (ON Semiconductor) silently becomes \"TRUE\". "
+            f"Quote it in config.yaml, e.g. [\"MARA\", \"AFRM\", \"ON\"]."
+        )
+    return clean(value).upper()
+
+
 def env_str(name: str, default: str = "") -> str:
     return clean(os.environ.get(name, default)) or clean(default)
 
@@ -78,7 +103,7 @@ class StudentConfig:
     def symbols(self) -> List[str]:
         seen, out = set(), []
         for s in list(self.high_beta) + list(self.diversified):
-            u = clean(s).upper()
+            u = clean_symbol(s, f"students[{self.id}]")
             if u and u not in seen:
                 seen.add(u)
                 out.append(u)
@@ -89,7 +114,7 @@ class StudentConfig:
         total = len(self.symbols)
         if not total:
             return 0.0
-        hb = {clean(s).upper() for s in self.high_beta}
+        hb = {clean_symbol(s, f"students[{self.id}].high_beta") for s in self.high_beta}
         return len(hb & set(self.symbols)) / total
 
     def credentials(self) -> tuple[str, str]:
@@ -166,6 +191,20 @@ class AppConfig:
 
     def sector_of(self, symbol: str) -> str:
         return self.sectors.get(clean(symbol).upper(), "unknown")
+
+    def validate_universe(self) -> list[str]:
+        """Problems worth refusing to trade on.  Empty list means healthy."""
+        problems: list[str] = []
+        for student in self.students:
+            for sym in student.symbols:
+                if not sym:
+                    problems.append(f"{student.id}: empty ticker in the universe")
+                elif self.sector_of(sym) == "unknown":
+                    problems.append(
+                        f"{student.id}: {sym} has no sector mapping, so it escapes "
+                        "the sector-exposure cap"
+                    )
+        return problems
 
     @property
     def execute(self) -> bool:
@@ -331,8 +370,14 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
             key_env=clean(s.get("key_env")),
             secret_env=clean(s.get("secret_env")),
             starting_equity=float(s.get("starting_equity", risk.starting_equity)),
-            high_beta=[clean(x).upper() for x in (s.get("high_beta") or [])],
-            diversified=[clean(x).upper() for x in (s.get("diversified") or [])],
+            high_beta=[
+                clean_symbol(x, f"students[{s.get('id')}].high_beta")
+                for x in (s.get("high_beta") or [])
+            ],
+            diversified=[
+                clean_symbol(x, f"students[{s.get('id')}].diversified")
+                for x in (s.get("diversified") or [])
+            ],
         )
         for s in (raw.get("students") or [])
     ]
@@ -352,7 +397,10 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
         risk=risk,
         llm=resolve_llm(raw.get("llm", {}) or {}),
         students=students,
-        sectors={clean(k).upper(): clean(v) for k, v in (raw.get("sectors") or {}).items()},
+        sectors={
+            clean_symbol(k, "sectors"): clean(v)
+            for k, v in (raw.get("sectors") or {}).items()
+        },
         signals=raw.get("signals", {}) or {},
         sentiment=raw.get("sentiment", {}) or {},
         alpaca_base_url=env_str(
