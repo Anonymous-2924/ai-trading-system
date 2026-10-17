@@ -248,8 +248,15 @@ def write_markdown(student_id: str, log_dir: str = "trading-logs") -> Optional[s
             "",
             "## Daily history",
             "",
+            "**Signals B/S/H** counts the recommendation made for each symbol in the "
+            "universe, not trades. A SELL signal on a symbol that is not held is no "
+            "action — this book is long-only and never shorts — so the SELL count is "
+            "usually larger than the number of sell orders actually sent. "
+            "**Orders sent** is what reached Alpaca.",
+            "",
             "| Date | UTC time | Equity | Cash | Buying power | Day P&L | Day % | "
-            "Total P&L | Total % | Pos | B/S/H | Orders | Data | Engine | Mode |",
+            "Total P&L | Total % | Held | Signals B/S/H | Orders sent | Data | "
+            "Engine | Mode |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for r in rows:

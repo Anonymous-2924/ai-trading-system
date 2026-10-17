@@ -1,0 +1,90 @@
+name: Diagnose Alpaca accounts
+
+# Read-only. Places no orders, changes nothing, writes no logs.
+#
+# Answers "the pipeline said it submitted orders, but my dashboard is empty":
+# it prints the Alpaca ACCOUNT NUMBER that each student's key pair actually
+# belongs to, plus every order on that account with its status. Compare the
+# account number against the one in the top-left of app.alpaca.markets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      students:
+        description: "Comma-separated student ids, or blank for all"
+        type: string
+        default: ""
+      limit:
+        description: "How many recent orders to list per account"
+        type: string
+        default: "25"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Inspect the paper accounts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --ignore-installed PyYAML requests PyYAML python-dotenv
+
+      - name: Mask and export every student's secrets
+        env:
+          KEY_1: ${{ secrets.ALPACA_API_KEY_1 }}
+          SECRET_1: ${{ secrets.ALPACA_SECRET_KEY_1 }}
+          KEY_2: ${{ secrets.ALPACA_API_KEY_2 }}
+          SECRET_2: ${{ secrets.ALPACA_SECRET_KEY_2 }}
+          KEY_3: ${{ secrets.ALPACA_API_KEY_3 }}
+          SECRET_3: ${{ secrets.ALPACA_SECRET_KEY_3 }}
+        run: |
+          for n in 1 2 3; do
+            eval "K=\$KEY_$n"; eval "S=\$SECRET_$n"
+            K="$(printf '%s' "$K" | tr -d '[:space:]')"
+            S="$(printf '%s' "$S" | tr -d '[:space:]')"
+            if [ -n "$K" ]; then
+              echo "::add-mask::$K"
+              echo "ALPACA_API_KEY_$n=$K" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$S" ]; then
+              echo "::add-mask::$S"
+              echo "ALPACA_SECRET_KEY_$n=$S" >> "$GITHUB_ENV"
+            fi
+          done
+
+      - name: Query Alpaca
+        env:
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          DEMO_MODE: "false"
+          CONFIG_PATH: config/config.yaml
+        run: |
+          python scripts/check_alpaca.py \
+            --students "${{ inputs.students }}" \
+            --limit "${{ inputs.limit || '25' }}" \
+            2>&1 | tee diagnose.log
+
+      - name: Put it on the job summary
+        if: always()
+        run: |
+          {
+            echo "## Alpaca account diagnosis"
+            echo ""
+            echo "Compare each **ACCOUNT NUMBER** below against the one shown in the"
+            echo "top-left corner of app.alpaca.markets. If they differ, the browser"
+            echo "is logged into a different paper account than that student's keys."
+            echo ""
+            echo '```'
+            cat diagnose.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
