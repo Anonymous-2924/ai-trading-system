@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Core numerics.  numpy 2.x is required and supported.
+#
+# NOTE: pandas_ta is deliberately NOT a dependency. It imports `numpy.NaN`,
+# which was removed in numpy 2.0, so it breaks on any current install. Every
+# indicator in this project is implemented directly in pandas/numpy — see
+# src/trading_system/indicators.py.
+# ---------------------------------------------------------------------------
+numpy>=2.0,<3
+pandas>=2.2
+
+# HTTP, config and environment
+requests>=2.32
+PyYAML>=6.0
+python-dotenv>=1.0
+
+# ---------------------------------------------------------------------------
+# Agents + MCP.
+#
+# crewai-tools MUST be installed with the [mcp] extra: it needs `mcpadapt`,
+# and without it crewai-tools reports a confusing "missing mcp package" error
+# even when `mcp` itself is installed.
+#
+# crewai pins mcp~=1.28 (which provides FastMCP). The mcp 2.x line renamed
+# FastMCP to MCPServer; src/trading_system/mcp_server.py imports either.
+#
+# On Debian/Ubuntu, if pip fails with a PyYAML RECORD error, install with:
+#     pip install --ignore-installed PyYAML -r requirements.txt
+# ---------------------------------------------------------------------------
+crewai>=1.0
+crewai-tools[mcp]>=1.0
+mcp>=1.28
+
+# OpenAI-compatible client. Every provider (Ollama Cloud, Groq, anything
+# else) is reached through this, so CrewAI uses its native OpenAI path.
+openai>=1.60
+
+# Dashboard
+streamlit>=1.40
+altair>=5.0
+
+# Tests
+pytest>=8.0

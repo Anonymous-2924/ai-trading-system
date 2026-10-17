@@ -1,0 +1,207 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  CONFIG_PATH: config/config.yaml
+
+jobs:
+  secret-scan:
+    name: No committed secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if a .env file is tracked
+        run: |
+          # .env.example is the only one allowed.
+          TRACKED="$(git ls-files | grep -E '(^|/)\.env($|\..*)' | grep -v '^\.env\.example$' || true)"
+          if [ -n "$TRACKED" ]; then
+            echo "::error title=Committed .env::These files must never be committed:"
+            echo "$TRACKED"
+            exit 1
+          fi
+          echo "No tracked .env files."
+
+      - name: Fail if .env is missing from .gitignore
+        run: |
+          grep -qE '^\.env$' .gitignore || {
+            echo "::error title=.gitignore::'.env' must be listed in .gitignore"
+            exit 1
+          }
+          echo ".env is ignored."
+
+      - name: Fail if anything key-shaped is committed
+        run: |
+          # Patterns for real credentials. Each is anchored so the documented
+          # placeholders in .env.example and the README do not trip it.
+          #   PK........ / AK........  Alpaca key ids (20 chars, upper+digits)
+          #   gsk_...                  Groq
+          #   sk-... / sk-proj-...     OpenAI-compatible
+          #   ghp_/gho_/ghs_/github_pat_   GitHub
+          #   -----BEGIN ... PRIVATE KEY-----
+          PATTERN='(\b(PK|AK)[A-Z0-9]{18}\b|\bgsk_[A-Za-z0-9]{40,}|\bsk-(proj-)?[A-Za-z0-9_-]{32,}|\b(ghp|gho|ghs)_[A-Za-z0-9]{36}|\bgithub_pat_[A-Za-z0-9_]{50,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+
+          HITS="$(git ls-files -z \
+            | xargs -0 grep -nIE "$PATTERN" \
+            -- 2>/dev/null \
+            | grep -vE '^\.github/workflows/tests\.yml:' || true)"
+
+          if [ -n "$HITS" ]; then
+            echo "::error title=Key-shaped string committed::Something that looks like a live credential is in the repository:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "No key-shaped strings found."
+
+      - name: Fail if a secret value is hardcoded instead of read from env
+        run: |
+          # An assignment of a non-empty literal to a credential-looking name.
+          HITS="$(git ls-files '*.py' '*.yaml' '*.yml' '*.toml' \
+            | xargs grep -nIE "(api_key|secret_key|API_KEY|SECRET_KEY|apikey)[[:space:]]*[:=][[:space:]]*['\"][A-Za-z0-9_\-]{16,}['\"]" \
+            || true)"
+          if [ -n "$HITS" ]; then
+            echo "::error title=Hardcoded credential::Credentials must come from the environment, never the source:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "No hardcoded credentials."
+
+  tests:
+    name: pytest (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # --ignore-installed PyYAML works around the Debian/Ubuntu PyYAML
+          # RECORD error that otherwise aborts the install.
+          pip install --ignore-installed PyYAML -r requirements.txt
+
+      - name: Confirm numpy 2.x and the absence of pandas_ta
+        run: |
+          python -c "import numpy; assert int(numpy.__version__.split('.')[0]) >= 2, numpy.__version__; print('numpy', numpy.__version__)"
+          python -c "
+          import importlib.util, sys
+          if importlib.util.find_spec('pandas_ta'):
+              sys.exit('pandas_ta must not be installed: it imports numpy.NaN, removed in numpy 2.0')
+          print('pandas_ta is absent, as intended')
+          "
+
+      - name: Run the test suite
+        env:
+          DEMO_MODE: "true"
+        run: python -m pytest -v
+
+      - name: Start the MCP server and call its tools
+        env:
+          DEMO_MODE: "true"
+        run: |
+          python - <<'PY'
+          import asyncio
+          import sys
+
+          sys.path.insert(0, "src")
+          from trading_system.mcp_client import MCPToolClient
+
+          async def main():
+              async with MCPToolClient(extra_env={"DEMO_MODE": "true"}).session() as c:
+                  tools = await c.list_tools()
+                  print(f"{len(tools)} tools advertised")
+                  for t in tools:
+                      props = set((t["schema"].get("properties") or {}).keys())
+                      required = set(t["schema"].get("required") or [])
+                      assert props, f"{t['name']} has zero parameters"
+                      assert props == required, f"{t['name']} has an optional parameter"
+                  out = await c.call("evaluate_rule_engine",
+                                     {"student_id": "student_1", "symbols": "all"})
+                  assert out["ok"], out
+                  print("rule engine over MCP:", out["counts"])
+
+          asyncio.run(main())
+          PY
+
+      - name: Run the demo pipeline end to end
+        env:
+          DEMO_MODE: "true"
+          LLM_PROVIDER: none
+          RUN_MODE: analyse
+          TRADING_LOG_DIR: ci-trading-logs
+          MODEL_RUN_DIR: ci-model-run
+        run: |
+          python scripts/run_trading.py --demo --no-llm
+          # The run must have produced artefacts and a log row per student.
+          python - <<'PY'
+          import pathlib
+          import sys
+
+          artefacts = sorted(pathlib.Path("ci-model-run").glob("*.md"))
+          assert len(artefacts) >= 6, f"expected agent artefacts, got {artefacts}"
+          print(f"{len(artefacts)} agent artefacts written")
+
+          logs = pathlib.Path("ci-trading-logs")
+          for sid in ("student_1", "student_2", "student_3"):
+              for suffix in ("csv", "md"):
+                  path = logs / f"{sid}.{suffix}"
+                  assert path.exists(), f"missing {path}"
+          print("per-member daily logs written for all three students")
+
+          # The demo run must never claim live data.
+          for path in artefacts:
+              text = path.read_text(encoding="utf-8")
+              if "ALPACA_LIVE" in text:
+                  sys.exit(f"{path} claims live data in a demo run")
+          print("no demo artefact claims live data")
+          PY
+
+      - name: Confirm the refusal path when there are no credentials
+        env:
+          DEMO_MODE: "false"
+          LLM_PROVIDER: none
+          TRADING_LOG_DIR: ci-refuse-logs
+          MODEL_RUN_DIR: ci-refuse-model-run
+        run: |
+          python - <<'PY'
+          import sys
+
+          sys.path.insert(0, "src")
+          from trading_system.alpaca_client import AlpacaClient, MarketDataUnavailable
+
+          try:
+              AlpacaClient().get_bars(["AAPL"])
+          except MarketDataUnavailable as exc:
+              print("refused as expected:", str(exc)[:90])
+          else:
+              sys.exit("the client invented data with no credentials and no demo mode")
+          PY
+
+      - name: Run the fast LLM check (must not fail the build)
+        continue-on-error: true
+        env:
+          LLM_PROVIDER: none
+        run: python scripts/test_llm.py --timeout 15 || true

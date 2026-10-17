@@ -1,0 +1,172 @@
+# ---------------------------------------------------------------------------
+# Sample configuration.  Every value here can be overridden by an environment
+# variable (see .env.example) or by a CLI flag on scripts/run_trading.py.
+#
+# Tuning values live HERE and never as MCP tool arguments: CrewAI advertises
+# tools in OpenAI strict mode, which forces every declared parameter into
+# "required", so an "optional tuning knob" parameter is not expressible.
+# ---------------------------------------------------------------------------
+
+run:
+  mode: analyse            # analyse | execute
+  require_human_approval: true
+  demo_mode: false
+  max_llm_symbols: 12      # crew cost is ~2 requests per symbol + 4
+  lookback_days: 400       # enough to seed EMA200 and 60-bar statistics
+  model_run_dir: model-run
+  log_dir: trading-logs
+
+# ---------------------------------------------------------------------------
+# AGGRESSION.  The brief says: "You are all young and MUST take risks. A
+# conservative or cautious approach will not do."  0.0 is textbook-timid,
+# 1.0 is maximally aggressive.  The default of 0.75 is deliberately well above
+# the textbook settings; see the README section "Aggression" for the numbers
+# each level produces.
+# ---------------------------------------------------------------------------
+aggression: 0.75
+
+risk:
+  starting_equity: 100000.0
+  # Position size as a fraction of equity, interpolated by `aggression`
+  # between the timid and aggressive ends.
+  position_pct_timid: 0.03
+  position_pct_aggressive: 0.14
+  # Conviction multipliers applied on top of the base position size.
+  conviction_multipliers:
+    LOW: 0.0               # LOW conviction never opens a position
+    MEDIUM: 0.7
+    HIGH: 1.0
+    VERY_HIGH: 1.35
+  max_positions_timid: 8
+  max_positions_aggressive: 15
+  # Gross exposure as a fraction of equity.  Above 1.0 uses Alpaca paper
+  # margin; the paper account grants 2x intraday / 1x overnight on equities.
+  max_gross_exposure_timid: 0.60
+  max_gross_exposure_aggressive: 1.35
+  # No single name above this fraction of equity.
+  max_position_pct_timid: 0.08
+  max_position_pct_aggressive: 0.22
+  # No single sector above this fraction of equity.
+  max_sector_pct_timid: 0.25
+  max_sector_pct_aggressive: 0.45
+  # Stops and targets are ATR multiples, so a volatile name gets a wider stop.
+  atr_stop_multiple_timid: 1.5
+  atr_stop_multiple_aggressive: 2.8
+  atr_target_multiple_timid: 2.5
+  atr_target_multiple_aggressive: 6.0
+  # Keep this much of the account in cash no matter what.
+  min_cash_buffer_pct: 0.02
+  # Refuse an order whose notional is below this (commission-free, but
+  # fractional dust is noise).
+  min_order_notional: 50.0
+  # High-beta sleeve: fraction of the book that must sit in S&P High Beta
+  # style names.  The brief requires at least 30%.
+  min_high_beta_pct: 0.30
+
+signals:
+  buy_threshold: 0.18
+  sell_threshold: -0.18
+  conviction_thresholds:
+    medium: 0.22
+    high: 0.38
+    very_high: 0.55
+  dimension_weights:
+    trend: 0.28
+    momentum: 0.24
+    volume: 0.14
+    volatility: 0.12
+    statistics: 0.12
+    sentiment: 0.10
+  # MACD's share of the whole composite, split 60% to the LINE (a TREND
+  # statement) and 40% to the HISTOGRAM (a MOMENTUM statement).
+  macd_budget: 0.10
+
+sentiment:
+  enabled: true
+  lookback_hours: 48
+  max_articles_per_symbol: 12
+  # Headlines are scored by a transparent lexicon, NOT invented.  With no
+  # credentials and no demo mode the system returns "no data" rather than
+  # fabricating a headline.
+  neutral_on_no_news: true
+
+llm:
+  provider: ollama_cloud   # ollama_cloud | ollama_local | groq | openai_compatible | none
+  model: gpt-oss:120b
+  temperature: 0.2
+  max_retries: 8           # free tiers return 429; honour Retry-After
+  timeout_seconds: 180
+  # When the LLM is unavailable, unauthorised, rate-limited or returns empty
+  # content, fall back to the deterministic rule engine.  Every fallback is
+  # announced loudly — never silently.
+  fallback_to_rule_engine: true
+
+students:
+  - id: student_1
+    name: Student 1
+    key_env: ALPACA_API_KEY_1
+    secret_env: ALPACA_SECRET_KEY_1
+    starting_equity: 100000.0
+    high_beta: [TSLA, NVDA, PLTR, COIN, SMCI]
+    diversified: [AAPL, MSFT, JNJ, JPM, XOM, PG, V, CAT, UNH]
+  - id: student_2
+    name: Student 2
+    key_env: ALPACA_API_KEY_2
+    secret_env: ALPACA_SECRET_KEY_2
+    starting_equity: 100000.0
+    high_beta: [AMD, MRNA, ENPH, RIVN, DKNG]
+    diversified: [GOOGL, AMZN, KO, BAC, CVX, HD, MRK, HON, COST]
+  - id: student_3
+    name: Student 3
+    key_env: ALPACA_API_KEY_3
+    secret_env: ALPACA_SECRET_KEY_3
+    starting_equity: 100000.0
+    high_beta: [MARA, AFRM, UPST, CCL, ON]
+    diversified: [META, ORCL, PEP, WFC, LMT, DIS, ABBV, NKE, WMT]
+
+# Sector map used by the sector-exposure cap.  Unmapped symbols fall into
+# "unknown", which shares a single bucket — so an unmapped name is treated
+# conservatively rather than being exempt from the cap.
+sectors:
+  TSLA: consumer_discretionary
+  NVDA: technology
+  PLTR: technology
+  COIN: financials
+  SMCI: technology
+  AAPL: technology
+  MSFT: technology
+  JNJ: healthcare
+  JPM: financials
+  XOM: energy
+  PG: consumer_staples
+  V: financials
+  CAT: industrials
+  UNH: healthcare
+  AMD: technology
+  MRNA: healthcare
+  ENPH: technology
+  RIVN: consumer_discretionary
+  DKNG: consumer_discretionary
+  GOOGL: communication_services
+  AMZN: consumer_discretionary
+  KO: consumer_staples
+  BAC: financials
+  CVX: energy
+  HD: consumer_discretionary
+  MRK: healthcare
+  HON: industrials
+  COST: consumer_staples
+  MARA: financials
+  AFRM: financials
+  UPST: financials
+  CCL: consumer_discretionary
+  ON: technology
+  META: communication_services
+  ORCL: technology
+  PEP: consumer_staples
+  WFC: financials
+  LMT: industrials
+  DIS: communication_services
+  ABBV: healthcare
+  NKE: consumer_discretionary
+  WMT: consumer_staples

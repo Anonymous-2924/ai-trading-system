@@ -1,0 +1,286 @@
+name: Trading analysis
+
+# ---------------------------------------------------------------------------
+# Scheduled on weekdays, plus manual dispatch.
+#
+# ORDER SUBMISSION: only mode=execute sets REQUIRE_HUMAN_APPROVAL=false, and
+# BOTH are required before a single order leaves the runner. The scheduled
+# runs below have no `inputs`, so mode falls back to analyse and a cron run
+# NEVER places a trade. To trade, dispatch the workflow manually and choose
+# mode=execute.
+# ---------------------------------------------------------------------------
+
+on:
+  schedule:
+    # 14:45 UTC — about 15 minutes after the US cash open (09:30 ET).
+    - cron: "45 14 * * 1-5"
+    # 20:15 UTC — after the US close, for the end-of-day equity snapshot.
+    - cron: "15 20 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "analyse = recommendations only; execute = submit paper orders"
+        type: choice
+        options: [analyse, execute]
+        default: analyse
+      students:
+        description: "Comma-separated student ids, or 'all'"
+        type: string
+        default: all
+      model:
+        description: "LLM model id (blank = the config default)"
+        type: string
+        default: ""
+      max_llm_symbols:
+        description: "Symbol cap for the agent crew (~2 requests per symbol + 4)"
+        type: string
+        default: "12"
+      aggression:
+        description: "0.0 timid .. 1.0 maximal"
+        type: string
+        default: "0.75"
+
+permissions:
+  contents: write
+
+concurrency:
+  # One trading run at a time: concurrent runs would fight over the logs.
+  group: trading-analysis
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: "1"
+  CONFIG_PATH: config/config.yaml
+
+jobs:
+  analyse:
+    name: ${{ matrix.student }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      # Each student uses its OWN Alpaca account, and the free LLM tier caps
+      # tokens per minute — parallel jobs would exhaust it instantly.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        student: [student_1, student_2, student_3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # --ignore-installed PyYAML works around the Debian/Ubuntu PyYAML
+          # RECORD error that otherwise aborts the install.
+          pip install --ignore-installed PyYAML -r requirements.txt
+
+      - name: Select this student's secrets
+        id: creds
+        env:
+          KEY_1: ${{ secrets.ALPACA_API_KEY_1 }}
+          SECRET_1: ${{ secrets.ALPACA_SECRET_KEY_1 }}
+          KEY_2: ${{ secrets.ALPACA_API_KEY_2 }}
+          SECRET_2: ${{ secrets.ALPACA_SECRET_KEY_2 }}
+          KEY_3: ${{ secrets.ALPACA_API_KEY_3 }}
+          SECRET_3: ${{ secrets.ALPACA_SECRET_KEY_3 }}
+        run: |
+          case "${{ matrix.student }}" in
+            student_1) KEY="$KEY_1"; SECRET="$SECRET_1" ;;
+            student_2) KEY="$KEY_2"; SECRET="$SECRET_2" ;;
+            student_3) KEY="$KEY_3"; SECRET="$SECRET_3" ;;
+            *) KEY=""; SECRET="" ;;
+          esac
+
+          # Strip whitespace: a key pasted into the secrets UI with a trailing
+          # newline is rejected by Alpaca as invalid.
+          KEY="$(printf '%s' "$KEY" | tr -d '[:space:]')"
+          SECRET="$(printf '%s' "$SECRET" | tr -d '[:space:]')"
+
+          if [ -z "$KEY" ] || [ -z "$SECRET" ]; then
+            echo "::warning title=Skipping ${{ matrix.student }}::No Alpaca secrets configured (ALPACA_API_KEY_N / ALPACA_SECRET_KEY_N). Skipping this student rather than failing the run."
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Mask BEFORE exporting, so nothing can echo them into the log.
+          echo "::add-mask::$KEY"
+          echo "::add-mask::$SECRET"
+          echo "ALPACA_API_KEY=$KEY" >> "$GITHUB_ENV"
+          echo "ALPACA_SECRET_KEY=$SECRET" >> "$GITHUB_ENV"
+          echo "has_creds=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mask the LLM key
+        if: steps.creds.outputs.has_creds == 'true'
+        env:
+          OLLAMA_RAW: ${{ secrets.OLLAMA_API_KEY }}
+        run: |
+          OLLAMA_KEY="$(printf '%s' "$OLLAMA_RAW" | tr -d '[:space:]')"
+          if [ -n "$OLLAMA_KEY" ]; then
+            echo "::add-mask::$OLLAMA_KEY"
+            echo "OLLAMA_API_KEY=$OLLAMA_KEY" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=No LLM key::OLLAMA_API_KEY is not set. The run will use the deterministic rule engine, and the fallback will be announced in the output."
+          fi
+
+      - name: Check the model can drive the crew
+        if: steps.creds.outputs.has_creds == 'true'
+        continue-on-error: true
+        env:
+          LLM_PROVIDER: ollama_cloud
+          LLM_MODEL: ${{ inputs.model }}
+        run: |
+          # ~1 minute. Never fails the job: the rule engine runs regardless.
+          [ -n "$LLM_MODEL" ] || unset LLM_MODEL
+          python scripts/test_llm.py --timeout 20 || \
+            echo "::warning title=LLM check failed::The run will fall back to the deterministic rule engine."
+
+      - name: Run the pipeline
+        if: steps.creds.outputs.has_creds == 'true'
+        env:
+          RUN_MODE: ${{ inputs.mode || 'analyse' }}
+          # THE EXECUTION GATE. Orders are submitted only when BOTH
+          # RUN_MODE=execute and REQUIRE_HUMAN_APPROVAL=false. Scheduled runs
+          # have no `inputs`, so mode is analyse and this stays 'true'.
+          REQUIRE_HUMAN_APPROVAL: ${{ inputs.mode == 'execute' && 'false' || 'true' }}
+          LLM_PROVIDER: ollama_cloud
+          LLM_MODEL: ${{ inputs.model }}
+          MAX_LLM_SYMBOLS: ${{ inputs.max_llm_symbols || '12' }}
+          AGGRESSION: ${{ inputs.aggression || '0.75' }}
+          DEMO_MODE: "false"
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+        run: |
+          [ -n "$LLM_MODEL" ] || unset LLM_MODEL
+
+          WANTED="${{ inputs.students || 'all' }}"
+          if [ "$WANTED" != "all" ] && [ -n "$WANTED" ]; then
+            case ",$WANTED," in
+              *",${{ matrix.student }},"*) ;;
+              *) echo "::notice::${{ matrix.student }} not selected; skipping."; exit 0 ;;
+            esac
+          fi
+
+          echo "mode=$RUN_MODE require_human_approval=$REQUIRE_HUMAN_APPROVAL"
+          python scripts/run_trading.py \
+            --students "${{ matrix.student }}" \
+            2>&1 | tee "run-${{ matrix.student }}.log"
+
+      - name: Write the job summary
+        if: always() && steps.creds.outputs.has_creds == 'true'
+        run: |
+          {
+            echo "## ${{ matrix.student }}"
+            echo ""
+            echo "- mode: \`${{ inputs.mode || 'analyse' }}\`"
+            echo "- orders auto-submitted: \`${{ inputs.mode == 'execute' }}\`"
+            echo "- aggression: \`${{ inputs.aggression || '0.75' }}\`"
+            echo ""
+            echo '```'
+            if [ -f "run-${{ matrix.student }}.log" ]; then
+              tail -n 80 "run-${{ matrix.student }}.log"
+            else
+              echo "(no run log produced)"
+            fi
+            echo '```'
+            echo ""
+            if [ -f "trading-logs/${{ matrix.student }}.md" ]; then
+              echo "### Daily log"
+              echo ""
+              head -n 24 "trading-logs/${{ matrix.student }}.md"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the agent artefacts
+        if: always() && steps.creds.outputs.has_creds == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-run-${{ matrix.student }}-${{ github.run_id }}
+          path: |
+            model-run/
+            run-${{ matrix.student }}.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Stash this student's daily log
+        if: always() && steps.creds.outputs.has_creds == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-log-${{ matrix.student }}-${{ github.run_id }}
+          path: trading-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+  commit-logs:
+    # A SEPARATE job, after the whole matrix, so the matrix jobs cannot race
+    # each other pushing to the same branch.
+    name: Commit the daily logs
+    needs: analyse
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect each student's log
+        uses: actions/download-artifact@v4
+        with:
+          pattern: trading-log-*-${{ github.run_id }}
+          path: incoming
+          merge-multiple: true
+
+      - name: Merge the rows into the committed logs
+        run: |
+          mkdir -p trading-logs
+          shopt -s nullglob
+          for src in incoming/*.csv; do
+            name="$(basename "$src")"
+            dest="trading-logs/$name"
+            if [ ! -f "$dest" ]; then
+              cp "$src" "$dest"
+              continue
+            fi
+            # Append only rows the committed file does not already have, so a
+            # re-run cannot duplicate a day.
+            tail -n +2 "$src" | while IFS= read -r row; do
+              [ -z "$row" ] && continue
+              grep -qxF "$row" "$dest" || printf '%s\n' "$row" >> "$dest"
+            done
+          done
+          # Rebuild the Markdown mirrors from the merged CSVs.
+          python - <<'PY'
+          import pathlib
+          import sys
+
+          sys.path.insert(0, "src")
+          from trading_system.daily_log import write_markdown
+
+          for csv in sorted(pathlib.Path("trading-logs").glob("*.csv")):
+              print("rebuilt", write_markdown(csv.stem, "trading-logs"))
+          PY
+          ls -la trading-logs/ || true
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add trading-logs/
+          if git diff --cached --quiet; then
+            echo "No daily-log changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(logs): daily trading logs for $(date -u +%Y-%m-%d) [skip ci]"
+          # Another run may have pushed while this job was working.
+          for attempt in 1 2 3 4; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error title=Could not push the logs::The run succeeded but the daily logs were not committed. They are still available as workflow artifacts."
+          exit 1

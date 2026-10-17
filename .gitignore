@@ -1,0 +1,38 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime output
+model-run/*
+!model-run/.gitkeep
+*.log
+.streamlit/secrets.toml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# NOTE: trading-logs/ is deliberately NOT ignored. The daily per-member logs
+# are committed on every run so a 15-20 day history accumulates in git.
