@@ -21,7 +21,9 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 ## Daily history
 
-| Date | UTC time | Equity | Cash | Buying power | Day P&L | Day % | Total P&L | Total % | Pos | B/S/H | Orders | Data | Engine | Mode |
+**Signals B/S/H** counts the recommendation made for each symbol in the universe, not trades. A SELL signal on a symbol that is not held is no action — this book is long-only and never shorts — so the SELL count is usually larger than the number of sell orders actually sent. **Orders sent** is what reached Alpaca.
+
+| Date | UTC time | Equity | Cash | Buying power | Day P&L | Day % | Total P&L | Total % | Held | Signals B/S/H | Orders sent | Data | Engine | Mode |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-17 | 14:03 | $100,000.00 | $100,000.00 | $400,000.00 | $0.00 | +0.00% | $0.00 | +0.00% | 0 | 8/3/3 | 5 | ALPACA_LIVE | deterministic_rule_engine | execute |
 
