@@ -6,18 +6,18 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 1 |
-| Latest equity | $100,000.00 |
-| Total P&L | $0.00 |
-| Total P&L % | +0.00% |
-| Best day | +0.00% on 2026-10-17 |
+| Runs recorded | 2 |
+| Latest equity | $100,163.63 |
+| Total P&L | $163.63 |
+| Total P&L % | +0.16% |
+| Best day | +0.16% on 2026-10-20 |
 | Worst day | +0.00% on 2026-10-17 |
-| Peak equity | $100,000.00 on 2026-10-17 |
-| Up days | 0 |
+| Peak equity | $100,163.63 on 2026-10-20 |
+| Up days | 1 |
 | Down days | 0 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
-| Last engine | crewai_agents |
+| Last engine | deterministic_rule_engine |
 
 ## Daily history
 
@@ -26,7 +26,9 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | Date | UTC time | Equity | Cash | Buying power | Day P&L | Day % | Total P&L | Total % | Held | Signals B/S/H | Orders sent | Data | Engine | Mode |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-17 | 14:01 | $100,000.00 | $100,000.00 | $400,000.00 | $0.00 | +0.00% | $0.00 | +0.00% | 0 | 4/4/6 | 4 | ALPACA_LIVE | crewai_agents | execute |
+| 2026-10-20 | 00:32 | $100,163.63 | $38,760.01 | $292,129.24 | $163.63 | +0.16% | $163.63 | +0.16% | 4 | 6/5/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 
 ## Notes
 
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; HD: LLM overrode the rule engine BUY -> HOLD (LOW) — Low conviction prevents opening a position, so the recommendation is to hold.; 9 symbol(s) not covered by the crew kept their rule-engine decision: AMD, AMZN, BAC, DKNG, ENPH, GOOGL, HON, MRK, RIVN; high-beta sleeve is 25% of this run's entries, below the 30% mandate — the signal engine did not produce enough high-beta BUYs today; the mandate is measured on the w
+- OHLCV for 14/14 symbols in 1 HTTP request(s); 37 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 0% of this run's entries, below the 30% mandate — the signal engine did not produce enough high-beta BUYs today; the mandate is measured on the whole book over the trading period, not on a single run; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=exec
