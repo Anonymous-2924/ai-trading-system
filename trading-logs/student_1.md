@@ -6,18 +6,18 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 4 |
-| Latest equity | $100,740.31 |
-| Total P&L | $740.31 |
-| Total P&L % | +0.74% |
+| Runs recorded | 5 |
+| Latest equity | $100,699.14 |
+| Total P&L | $699.14 |
+| Total P&L % | +0.70% |
 | Best day | +0.50% on 2026-10-21 |
-| Worst day | +0.00% on 2026-10-17 |
+| Worst day | -0.22% on 2026-10-21 |
 | Peak equity | $100,740.31 on 2026-10-21 |
 | Up days | 3 |
-| Down days | 0 |
+| Down days | 1 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
-| Last engine | deterministic_rule_engine |
+| Last engine | crewai_agents |
 
 ## Daily history
 
@@ -29,6 +29,7 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-19 | 22:58 | $100,226.87 | $24,302.38 | $293,965.25 | $226.87 | +0.23% | $226.87 | +0.23% | 7 | 7/4/3 | 3 | ALPACA_LIVE | crewai_agents | execute |
 | 2026-10-20 | 00:31 | $100,277.99 | $24,302.38 | $294,120.57 | $277.99 | +0.28% | $277.99 | +0.28% | 7 | 7/5/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-21 | 00:02 | $100,740.31 | $16,528.06 | $282,252.72 | $503.88 | +0.50% | $740.31 | +0.74% | 8 | 5/4/5 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
+| 2026-10-21 | 22:34 | $100,699.14 | $5,127.78 | $277,034.26 | $-225.27 | -0.22% | $699.14 | +0.70% | 9 | 1/3/10 | 3 | ALPACA_LIVE | crewai_agents | execute |
 
 ## Notes
 
@@ -36,3 +37,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; XOM: LLM overrode the rule engine BUY -> HOLD (VERY_HIGH) — Already held; no additional BUY order generated.; COIN: LLM overrode the rule engine SELL -> BUY (MEDIUM) — Risk‑capped sizing selects COIN as a BUY despite rule engine signal.; exits processed first; $7,828 of freed capital is available to this run's entries; high-beta sleeve is 100% of this run's entries
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $7,828 of freed capital is available to this run's entries; high-beta sleeve is 100% of this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $8,012 of freed capital is available to this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
+- OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; V: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; XOM: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; UNH: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; PG: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prev
