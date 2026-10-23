@@ -6,15 +6,15 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 6 |
-| Latest equity | $101,129.41 |
-| Total P&L | $1,129.41 |
-| Total P&L % | +1.13% |
+| Runs recorded | 7 |
+| Latest equity | $100,571.87 |
+| Total P&L | $571.87 |
+| Total P&L % | +0.57% |
 | Best day | +0.50% on 2026-10-21 |
-| Worst day | -0.22% on 2026-10-21 |
+| Worst day | -0.58% on 2026-10-23 |
 | Peak equity | $101,129.41 on 2026-10-22 |
 | Up days | 4 |
-| Down days | 1 |
+| Down days | 2 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
 | Last engine | crewai_agents |
@@ -31,6 +31,7 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-21 | 00:02 | $100,740.31 | $16,528.06 | $282,252.72 | $503.88 | +0.50% | $740.31 | +0.74% | 8 | 5/4/5 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-21 | 22:34 | $100,699.14 | $5,127.78 | $277,034.26 | $-225.27 | -0.22% | $699.14 | +0.70% | 9 | 1/3/10 | 3 | ALPACA_LIVE | crewai_agents | execute |
 | 2026-10-22 | 22:32 | $101,129.41 | $12,607.02 | $289,545.00 | $208.87 | +0.21% | $1,129.41 | +1.13% | 8 | 6/4/4 | 0 | ALPACA_LIVE | crewai_agents | execute |
+| 2026-10-23 | 22:26 | $100,571.87 | $12,606.62 | $277,422.48 | $-584.34 | -0.58% | $571.87 | +0.57% | 8 | 1/4/9 | 1 | ALPACA_LIVE | crewai_agents | execute |
 
 ## Notes
 
@@ -40,3 +41,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $8,012 of freed capital is available to this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; V: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; XOM: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; UNH: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prevents adding to existing position.; PG: LLM overrode the rule engine BUY -> HOLD (LOW) — Already held; policy prev
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; PG: LLM overrode the rule engine BUY -> HOLD (HIGH) — Already held; no new position added.; XOM: LLM overrode the rule engine BUY -> HOLD (MEDIUM) — Already held; no new position added.; 12 symbol(s) not covered by the crew kept their rule-engine decision: AAPL, CAT, COIN, JNJ, JPM, MSFT, NVDA, PLTR, SMCI, TSLA, UNH, V
+- OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; PLTR: LLM overrode the rule engine BUY -> HOLD (LOW) — Buy signal exists but position already held; no additional trade needed.; AAPL: LLM overrode the rule engine BUY -> HOLD (LOW) — Buy signal present but existing long position means no new order.; JNJ: LLM overrode the rule engine HOLD -> BUY (HIGH) — Sizing module identified a high‑conviction buying opportunity despite a neutral engine hold.; XOM: LLM overrode 
