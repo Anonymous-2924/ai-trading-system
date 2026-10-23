@@ -1,0 +1,390 @@
+# AI-Powered Algorithmic Paper Trading System
+
+### Project Progress Report
+
+**Submitted to:** [Professor's name]
+**Date:** 23 October 2026
+**Repository:** https://github.com/Anonymous-2924/ai-trading-system
+
+**Team**
+
+| Role | Name | Roll No. |
+|---|---|---|
+| Student 1 | Shivika Khanna | 065049 |
+| Student 2 | Kanika Mittal | 065030 |
+| Student 3 | Sharvi Sood | 065047 |
+
+---
+
+## 1. Introduction
+
+This report covers the algorithmic paper trading system we built for this assignment. The system trades US equities on Alpaca's paper trading platform, where each of us was given a simulated account of $100,000. It runs by itself on a schedule, decides what to buy and sell using a mix of technical analysis and AI agents, places the trades, and keeps a daily record of how each of our portfolios is doing.
+
+We have been trading since 17 October. This report explains what we built, how it works, what the results look like so far, and what problems we ran into along the way.
+
+We want to say at the start that we have deliberately included the things that went wrong as well as the things that worked. Several of our bugs were only found because the system was running live, and we think how we found and fixed them is one of the more useful parts of this project.
+
+## 2. Objectives
+
+What we set out to do:
+
+1. Build a system that analyses a fixed basket of stocks every trading day and produces a clear buy, sell or hold decision for each one.
+2. Use a wide range of technical indicators rather than relying on any single signal.
+3. Add AI agents on top of the technical analysis so the decisions get a layer of reasoning, not just arithmetic.
+4. Make sure the system keeps working when the AI is unavailable, since we are using free services that fail often.
+5. Manage risk properly: position sizing, stop losses, exposure limits.
+6. Run everything automatically, and keep a permanent daily record of profit and loss for each team member.
+7. Take real risks with position sizing, as the brief required, rather than defaulting to very cautious textbook limits.
+
+## 3. Portfolio Allocation
+
+Each of us has 14 stocks, 42 across the group. The brief required at least 30% of each portfolio to be in high-beta growth stocks (stocks that move much more than the overall market), with the rest diversified. We allocated 5 high-beta and 9 diversified names each, which works out to about 36%.
+
+| Member | High-beta (5) | Diversified (9) |
+|---|---|---|
+| Shivika Khanna | TSLA, NVDA, PLTR, COIN, SMCI | AAPL, MSFT, JNJ, JPM, XOM, PG, V, CAT, UNH |
+| Kanika Mittal | AMD, MRNA, ENPH, RIVN, DKNG | GOOGL, AMZN, KO, BAC, CVX, HD, MRK, HON, COST |
+| Sharvi Sood | MARA, AFRM, UPST, CCL, ON | META, ORCL, PEP, WFC, LMT, DIS, ABBV, NKE, WMT |
+
+We picked the high-beta names to be representative of the kind of stock in the S&P High Beta Index — large US companies whose share prices swing a lot more than the market average. We should be honest that we did not check these against the official published index membership, which is updated every quarter. If exact index membership matters for marking, this is easy to correct, because the stock lists live in a configuration file and nothing is hard-coded in the program.
+
+## 4. How the System Works
+
+Every run follows the same six steps for each team member.
+
+**Step 1 — Get the data.** The system asks Alpaca for about 400 days of daily price history for all 14 stocks. Importantly, this is a single request covering every stock, not 14 separate requests. It also pulls recent news headlines for those stocks in the same way.
+
+**Step 2 — Measure the stocks.** It calculates 29 different indicators for each stock. These are grouped into five categories, so that no single type of signal dominates:
+
+| Category | What it measures | Indicators used |
+|---|---|---|
+| Trend | Which direction the stock is moving | EMA 20/50/200, ADX, MACD line |
+| Momentum | How fast it is moving and whether that is changing | RSI, MACD histogram, ROC, TSI |
+| Volume | Whether real buying or selling is behind the move | CMF, OBV, MFI, PVO |
+| Volatility | How much the stock swings around | ATR, NATR, Bollinger width and %B, Donchian |
+| Statistics | How unusual today is compared with the stock's own history | Z-score, 5/20/60-day returns, skew |
+
+**Step 3 — Score them.** Each of the 29 measurements is converted into a score between −1 (very bearish) and +1 (very bullish). Scores are averaged within their category, and the five categories are then combined along with a news sentiment score using fixed weights:
+
+- Trend 28%, Momentum 24%, Volume 14%, Volatility 12%, Statistics 12%, News sentiment 10%
+
+This produces one final number per stock. If it is above +0.18 the system buys, below −0.18 it sells, otherwise it holds. How far past the threshold the score goes decides the conviction level (medium, high or very high), which in turn decides how much money to put in.
+
+**Step 4 — AI review.** Six AI agents then look at the same information and can change the decision. They work in a chain: market data, then technical analysis, then quantitative analysis, then news and sentiment, then risk management, then a final decision agent that produces the answer in a structured format.
+
+**Step 5 — Size and place the trades.** The risk module works out how many shares to buy, sets a stop loss and a profit target for each position, checks the decisions against exposure limits, and then submits the orders to Alpaca.
+
+**Step 6 — Record everything.** Each team member's equity, profit and loss, positions and signal counts are written to a log file and saved permanently.
+
+### A worked example
+
+To make this concrete, here is an actual decision the system produced for COIN, taken from our output:
+
+```
+Price: $145.89
+
+  8.2% above its 20-day moving average      →  +0.99
+  17.4% above its 200-day moving average    →  +0.82
+  MACD line well above zero                 →  +0.99
+  RSI at 60.5 (strong, not overbought)      →  +0.53
+  +20.4% over the last 12 days              →  +0.99
+  Money flow slightly negative              →  −0.32
+  Near the top of its Bollinger band        →  +0.74
+
+  Trend +0.79 | Momentum +0.74 | Volume −0.25
+  Volatility +0.57 | Statistics +0.71 | Sentiment 0.00
+
+  Final score: +0.52  →  BUY, conviction HIGH
+```
+
+The volume category voted against buying, and the system bought anyway because the other four categories outweighed it. This is the whole point of combining signals rather than relying on any one of them.
+
+## 5. Technical Implementation
+
+### 5.1 Indicators
+
+We wrote all 29 indicators ourselves using pandas and numpy, rather than importing a technical analysis library. We had to do this: the most popular library for this, `pandas_ta`, is broken with current versions of numpy because it uses `numpy.NaN`, which was removed in numpy version 2.0. Writing them ourselves also meant we understood exactly what each one was doing.
+
+Three of the indicators — RSI, ATR and ADX — use a specific smoothing method developed by Welles Wilder. There is a common mistake in coding this where people use the built-in exponential moving average function, which starts the calculation from a single value instead of an average of the first several. The results then disagree with every charting platform for hundreds of data points.
+
+We implemented it correctly and checked it by hand. For a seven-day price series of 10, 11, 12, 11, 13, 12, 14 we worked out RSI with a period of 3 manually:
+
+```
+gains  = 1, 1, 0, 2, 0, 2
+losses = 0, 0, 1, 0, 1, 0
+seed average gain = (1+1+0)/3 = 0.666667
+seed average loss = (0+0+1)/3 = 0.333333
+after smoothing:  avg gain = 1.160494, avg loss = 0.320988
+RS  = 3.615385
+RSI = 100 − 100/(1+3.615385) = 78.333333
+```
+
+Our code returns 78.333333 for the same input. We did the same for ATR. Both checks are saved as automated tests so they run every time we change anything.
+
+### 5.2 The MACD problem
+
+This is worth explaining separately because it is the one place where a naive implementation gives badly wrong answers.
+
+MACD produces two numbers: a line, and a histogram (the gap between that line and its own average). Most simple strategies just look at whether the histogram is positive. The problem is that during a long decline, the histogram turns positive on every small bounce. A stock that has fallen 70% will look bullish again and again.
+
+We treat the two numbers as saying different things. The MACD line's position relative to zero is a statement about trend. The histogram is a statement about momentum. We weight them 60% to the line and 40% to the histogram.
+
+We tested this on a simulated stock that falls 68% and then has a small bounce at the end:
+
+```
+MACD line     = −0.390  →  score −0.25  (bearish trend)
+MACD histogram = +0.464  →  score +0.65  (bullish momentum)
+Final decision: HOLD (score −0.08), not BUY
+```
+
+The histogram on its own says buy. Our system does not. The same decline without the bounce gives a clear SELL at −0.56. This is saved as a permanent test so we cannot accidentally break it later.
+
+### 5.3 AI agents and the MCP server
+
+The AI layer uses CrewAI with six agents. For the agents to actually do anything useful they need tools they can call, and the standard way of providing these is the Model Context Protocol (MCP).
+
+The brief specified that we build our own MCP server rather than using Alpaca's hosted one, so we wrote one. It runs as a local program and provides ten tools: fetching the stock list, getting account details, getting positions, fetching price data for all stocks at once, computing indicators, getting news sentiment, running the rule engine, sizing a position, placing a paper order, and reading the run configuration.
+
+Two constraints shaped how we wrote these tools, and both caused us real problems before we understood them:
+
+1. CrewAI describes tools to the AI model in something called "strict mode". In this mode, a tool with no parameters at all is rejected. One of our tools genuinely needs no input, so we gave it a single dummy parameter documented as "always pass 'all'".
+
+2. Strict mode also copies every parameter into the required list, even ones with default values. This means optional parameters are impossible — the model will be forced to supply a value and will invent one. So none of our tools has an optional parameter, and all tuning values come from the configuration file instead.
+
+We confirmed both of these by reading the installed CrewAI source code rather than guessing.
+
+### 5.4 The fallback engine
+
+This is the part of the design we are most pleased with.
+
+The entire decision process — all 29 indicators, the scoring, the thresholds — works without any AI at all. It is pure arithmetic and always gives the same answer for the same input. The AI agents sit on top of it as an interpretation layer.
+
+The reason this matters is that free AI services fail constantly. They hit rate limits, they time out, and small models sometimes get stuck in a loop and return an empty answer. If our system depended on the AI, a bad day would mean no trading at all and a gap in our records.
+
+Instead, when the AI fails the arithmetic takes over and the day continues normally. This has already happened to us in a live run. From Sharvi's log on 17 October:
+
+```
+LLM path unavailable, using the deterministic rule engine: the model
+returned empty content (CrewAI: 'Invalid response from LLM call -
+None or empty'). Small models loop over a tool and then return nothing.
+Falling back to the deterministic rule engine.
+```
+
+She still received 8 buy, 3 sell and 3 hold decisions that day.
+
+Equally important is that the fallback is never silent. It is recorded in three separate places: the run log, the console output, and a column in the daily CSV file showing which engine made that day's decisions. Anyone reading our records can tell exactly which days were AI-driven and which were not. A system that quietly degrades without telling you is worse than one that fails loudly.
+
+### 5.5 Risk management
+
+Deciding what to buy is only half the problem. The risk module handles how much, and when to get out.
+
+**Position sizing.** Each position is a percentage of the account, multiplied by the conviction level. Low conviction opens no position at all.
+
+**Stops and targets based on ATR.** ATR measures how much a stock typically moves in a day. We set the stop loss at about 2.5 times ATR below the entry price and the profit target at about 5 times ATR above it. Using ATR rather than a fixed percentage means a volatile stock gets a proportionally wider stop and is not thrown out by its own ordinary movement. The roughly 1:2 ratio between stop and target means the strategy can be right less than half the time and still make money.
+
+**Limits.** No single stock above about 18% of the account, no single sector above 40%, total exposure capped at about 1.16 times equity, and a minimum cash buffer that is always preserved.
+
+**Exits before entries.** The system plans all its sells first, then adds that money to what is available for the buys in the same run. Without this, money freed up by a sale would sit idle for a day.
+
+**Long only.** If the system decides to sell a stock we do not own, that is simply no action. It never opens a short position. Shorting carries unlimited loss potential and we deliberately excluded it. This rule is enforced in two separate places in the code.
+
+### 5.6 Aggression setting
+
+The brief was explicit that a cautious approach was not acceptable, so we made the risk appetite a single adjustable setting from 0 to 1 and set it at 0.75. This produces noticeably larger positions than standard retail advice:
+
+| Parameter | Timid (0.0) | Ours (0.75) | Maximum (1.0) | Typical textbook advice |
+|---|---|---|---|---|
+| Position size | 3% | 11.3% | 14% | 1–2% |
+| Maximum positions | 8 | 13 | 15 | 10–20 |
+| Total exposure | 0.60× | 1.16× | 1.35× | 1.0× or less |
+| Single stock limit | 8% | 18.5% | 22% | 5% |
+| Sector limit | 25% | 40% | 45% | 20–25% |
+| Stop loss (× ATR) | 1.5 | 2.47 | 2.8 | 1.5–2 |
+| Profit target (× ATR) | 2.5 | 5.12 | 6.0 | 2–3 |
+
+Our reasoning for the main choices:
+
+- With only 14 stocks and a trading window of under a month, a portfolio sized at 1% per trade cannot express a view. A 20% gain on a 1% position moves the account by 0.2%, which would be indistinguishable from noise.
+- We allowed a 40% sector cap rather than the usual 20% because our high-beta allocation is concentrated in technology by nature. A tighter cap would have made the required 30% high-beta allocation impossible to fill.
+- We used wide stops because high-beta stocks have large daily ranges. A tight stop on a stock that routinely moves 6% in a day gets triggered by normal noise rather than by a genuine reversal.
+
+We should be clear that these settings would not be appropriate for real money without a great deal more thought about how much loss we could tolerate.
+
+### 5.7 Safety: paper trading only
+
+Since the system places orders automatically, we took care that it cannot possibly reach a real-money account. There are two independent checks.
+
+The first parses the web address and requires the hostname to be exactly `paper-api.alpaca.markets` over HTTPS. A simple text search for that name is not enough, which is a genuine security issue rather than a theoretical one. An address like `https://evil.test/paper-api.alpaca.markets` contains the correct text but would send every order to someone else's server. Our check rejects that, along with similar tricks such as `paper-api.alpaca.markets.evil.test` and `paper-api.alpaca.markets@evil.test`. We wrote tests covering 21 such hostile addresses.
+
+The second check runs immediately before every single order is submitted. It independently re-examines the address actually about to be used, against its own separate list. The two checks share no code, so a mistake in one does not disable the other. We tested that an address changed after the first check is still caught by the second.
+
+API keys are never stored in the code. They are kept as GitHub encrypted secrets, and our automated tests fail the build if anything resembling a key is ever committed to the repository.
+
+### 5.8 Automation
+
+Everything runs on GitHub Actions without anyone starting it. There are two scheduled runs each weekday:
+
+| Time (UTC) | Time (IST) | Purpose |
+|---|---|---|
+| 19:30 | 01:00 next day | Full analysis and trading |
+| 21:30 | 03:00 next day | Records closing equity only; cannot trade |
+
+The trading run is timed to fall inside US market hours so that orders fill in the same session rather than queuing overnight. We chose times that stay on the correct side of the opening and closing bells in both US daylight and standard time, since the US clocks change in early November during our trading period.
+
+The three accounts run one at a time rather than together. Each uses its own Alpaca keys, and running them simultaneously would exhaust the free AI quota immediately.
+
+The clever part is how the records survive. A cloud server is wiped after each job, so anything written there would normally be lost. After every run, the system commits the updated profit and loss files back into our GitHub repository. This means the full history is stored in version control, timestamped, with a complete audit trail of every change. A separate job handles this after all three accounts have finished, so they cannot interfere with each other.
+
+### 5.9 Dashboard
+
+We also built a Streamlit dashboard for manual use. It allows entering Alpaca keys (held only for the browser session, never written to disk), selecting stocks and indicator categories, adjusting the aggression and scoring thresholds, starting a run, reviewing the recommendations with the full breakdown of why each decision was made, approving individual trades before anything is sent, and viewing positions, profit and loss, and the daily logs with an equity chart.
+
+## 6. Results So Far
+
+Trading began on 17 October. The figures below are as of 23 October, which is four completed trading days.
+
+| Member | Starting | Current equity | Profit / Loss | Return | Positions | Days logged |
+|---|---|---|---|---|---|---|
+| Shivika Khanna | $100,000 | $101,129.41 | +$1,129.41 | +1.13% | 8 | 6 |
+| Kanika Mittal | $100,000 | $98,863.14 | −$1,136.86 | −1.14% | 9 | 5 |
+| Sharvi Sood | $100,000 | $100,135.28 | +$135.28 | +0.14% | 5 | 2 |
+| **Group** | **$300,000** | **$300,127.83** | **+$127.83** | **+0.04%** | **22** | |
+
+The group as a whole is close to flat. Shivika's portfolio is up just over 1%, Kanika's is down by a similar amount, and Sharvi's is slightly up.
+
+Kanika's account was up $1,720 on 22 October and then lost $2,813 in a single day, which is what moved it into negative territory. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it actually happen is a useful reminder of what the aggression setting means in practice.
+
+Two honest caveats about these numbers:
+
+Sharvi's account has only two logged days compared with six and five for the others, so her figure of $100,135 is from 20 October and is now three days stale. Her actual current position is almost certainly different. This is a logging problem we are still investigating, not a trading problem — her positions and orders are real and visible in her Alpaca account. We explain this further in section 7.
+
+More importantly, four trading days tells us essentially nothing about whether the strategy is any good. The differences between the three of us at this point are much more likely to reflect which stocks happened to be in whose portfolio than any difference in skill. We would not draw conclusions about performance from this sample.
+
+## 7. Problems We Encountered
+
+We think this section is worth including in full, because several of these were only found by running the system live.
+
+**The ON Semiconductor bug.** This was the most interesting one. After our first live run, Sharvi's log contained the line `TRUE: order failed`. There is no stock with the ticker symbol TRUE.
+
+The cause was in the YAML configuration format we use for the stock lists. YAML version 1.1 treats a bare `ON` as the boolean value true, in the same way as `YES` and `NO`. Sharvi's high-beta list contained `ON` for ON Semiconductor, which was read as the value true and then converted to the text "TRUE". The system was trying to buy a stock that does not exist.
+
+It had two effects. Sharvi was actually trading 13 stocks rather than 14, and because the sector lookup was also affected, ON was escaping the technology sector exposure limit.
+
+We fixed it by quoting every stock symbol in the configuration file, and by making the program refuse outright to accept a boolean where a stock symbol should be, with an error message explaining how to fix it. We added eight tests, including one that checks every symbol in the configuration file reads as text.
+
+We would not have found this without running live. All our tests passed beforehand.
+
+**Market closed on the first run.** Our first run was on a Saturday. Alpaca accepted all 16 orders across the three accounts but they stayed queued until Monday's open. For a while we thought the system was broken because nothing appeared to be happening. It was working correctly; we were just looking at it on a non-trading day.
+
+**Looking at the wrong Alpaca account.** Related to the above, one of us checked an Alpaca dashboard that showed no orders at all while another showed them correctly. The orders had gone to a different paper account than the one open in the browser. To settle questions like this quickly we wrote a diagnostic tool that prints, for each set of keys, the exact Alpaca account number those keys belong to along with every order on file and its status. It is read-only and places no orders.
+
+**Scheduled runs arriving late.** GitHub's scheduler is best-effort and can be significantly delayed under load. Our 19:30 run on 20 October actually started at 22:58, by which time the US market had closed, so those orders queued overnight instead of filling the same day. We are planning to move the trading run earlier to leave more headroom before the market closes.
+
+**The daily log table not displaying.** Our run summary page was showing the table heading but no rows. The data was present in the file all along; the preview was cut off at exactly the line between the table heading and the separator line that Markdown needs to render a table. A display bug rather than a data loss, but it took some time to work out.
+
+**Missing dependency in a workflow.** When writing the diagnostic tool's automated job, we listed its dependencies by hand to keep it fast and forgot pandas, so it crashed immediately. We had checked the configuration file was valid but had not actually run it. We now have a step that checks the program can start before the real work begins.
+
+**Student selection not accepting "all".** The diagnostic reported "0 of 0 accounts read successfully" and gave no reason. The students field had been given the value `all`, which our main trading workflow accepts, but the diagnostic only accepted a blank field. It selected nothing and then reported success over an empty list. We fixed the input handling and also made the configuration loader refuse to load silently when the configuration file is missing, which was a related trap.
+
+**AI running out of quota.** Free AI services have both per-session and weekly limits. Our crew uses roughly 28 requests per person per run, so about 84 per run across the three accounts. We added a configurable cap on how many stocks are sent to the AI, and the fallback engine handles whatever is left over.
+
+## 8. Testing
+
+We have 272 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
+
+Beyond the unit tests we also:
+
+- Started the MCP server as a real program and called all ten of its tools over the actual connection.
+- Ran a complete six-agent crew against a local stub server that recorded every request, so we could inspect exactly what was being sent rather than assuming.
+- Loaded the dashboard in an automated browser, clicked through a full run, and confirmed the recommendations table and trade approval screens worked.
+- Ran every step of our automated workflows locally before relying on them, including confirming that our secret scanner actually detects deliberately planted fake credentials rather than passing by default.
+
+## 9. Limitations
+
+We want to be clear about what this project does and does not demonstrate.
+
+**We have not shown the strategy is profitable.** We have tested that the system behaves sensibly — a crashing stock produces a sell, a rising stock produces a buy, a flat stock produces a hold. We have not backtested it over historical data, and four trading days cannot distinguish skill from luck. Nothing in our results should be read as evidence that this approach beats the market.
+
+**The high-beta stock list is representative rather than verified.** As noted in section 3, we have not checked it against the official index membership.
+
+**One account has incomplete logging.** Sharvi's log has gaps on days where the job did not reach the logging stage. Her trading is unaffected but her recorded history is thinner than the others'.
+
+**The sentiment analysis is simple.** It scores news headlines using a word list rather than a language model. We chose this deliberately so it keeps working when the AI is unavailable and so every score can be traced back to the words that produced it, but it is less sophisticated than it could be.
+
+**We are dependent on free service tiers** for both market data and AI, which limits how often we can run and how many stocks the AI can review.
+
+## 10. Conclusion
+
+The system is complete and running without manual intervention. It analyses 42 stocks across the three of us using 29 indicators each, combines them into clear decisions, places trades automatically, and keeps a permanent audit trail of every run.
+
+The design decision we would most like to highlight is the deterministic fallback. Because every decision can be made without AI, a failure of the AI service degrades the system rather than stopping it, and the degradation is always visible in the records. This has already saved runs for us in practice.
+
+The results so far are close to flat overall, and we do not think four days of data supports any conclusion about the strategy's quality. What we can say with confidence is that the system works correctly, fails safely, and that every decision it has made can be traced and explained.
+
+We are happy to demonstrate the system running, or to walk through any part of the code, at your convenience.
+
+---
+
+## Appendix A — Repository Structure
+
+```
+src/trading_system/
+    indicators.py     all 29 indicators, written in pandas/numpy
+    features.py       turns price data into the 29 measurements
+    scoring.py        the weighted ensemble and buy/sell/hold decision
+    sentiment.py      news headline scoring
+    rule_engine.py    the deterministic decision engine
+    agents.py         the six CrewAI agents
+    mcp_server.py     our MCP server and its ten tools
+    mcp_client.py     connects the server to CrewAI
+    llm.py            AI provider selection and health checks
+    alpaca_client.py  market data, news, account and orders
+    paper_guard.py    the two paper-trading safety checks
+    risk.py           sizing, limits, stops, order management
+    daily_log.py      the per-member profit and loss records
+    pipeline.py       ties everything together
+    config.py         configuration loading
+
+scripts/              command line tools
+dashboard/app.py      the Streamlit dashboard
+config/config.yaml    stock lists, weights and all settings
+tests/                272 automated tests
+trading-logs/         our daily profit and loss records
+.github/workflows/    the automation
+```
+
+## Appendix B — Running the System
+
+```bash
+git clone -b claude/ai-paper-trading-system-cd20m9 \
+  https://github.com/Anonymous-2924/ai-trading-system.git
+cd ai-trading-system
+python3 -m venv .venv && source .venv/bin/activate
+pip install --ignore-installed PyYAML -r requirements.txt
+```
+
+Demonstration using clearly labelled simulated data, requiring no credentials:
+
+```bash
+python scripts/run_trading.py --demo --no-llm
+```
+
+Run the test suite:
+
+```bash
+python -m pytest
+```
+
+Start the dashboard:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Check whether a given AI model can drive the system (takes about one minute):
+
+```bash
+python scripts/test_llm.py
+```
+
+The daily profit and loss records are in the `trading-logs` folder of the repository, where the `.md` files display as formatted tables.
