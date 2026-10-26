@@ -1,0 +1,101 @@
+# Put back daily-log rows that the old artifact merge threw away.
+#
+# Each student's job uploads the whole trading-logs/ directory, so every
+# artifact of a run holds all three students' CSVs -- one fresh, two stale.
+# The commit job used to download them with merge-multiple, which flattens
+# same-named files and lets the last one extracted win, so two of the three
+# students' rows were discarded on every run while every job reported success.
+#
+# The runs were fine and each uploaded its own correct file, so the lost rows
+# survive inside the per-run artifacts until those expire seven days after
+# the run. This workflow reads them back.
+#
+# Actions -> "Recover lost log rows" -> Run workflow.
+# Safe to run repeatedly: rows are keyed on their UTC timestamp.
+name: Recover lost log rows
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: show what would be recovered, change nothing'
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  # Shared with the trading run's commit job and the alpha backfill, so no
+  # two of them can write trading-logs/ at the same time.
+  group: trading-logs-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  recover:
+    name: Read the rows back out of the run artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip >/dev/null
+          pip install --ignore-installed PyYAML -r requirements.txt
+
+      - name: Recover
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -o pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            python scripts/recover_logs.py --dry-run 2>&1 | tee recover.log
+          else
+            python scripts/recover_logs.py 2>&1 | tee recover.log
+          fi
+
+      - name: Put the result in the run summary
+        if: always()
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## Log recovery"
+            echo
+            printf 'Dry run: `%s`\n' "$DRY_RUN"
+            echo
+            echo '```'
+            cat recover.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the recovered rows
+        if: inputs.dry_run != true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add trading-logs/
+          if git diff --cached --quiet; then
+            echo "Nothing recovered, so nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(logs): recover rows lost to the artifact merge [skip ci]"
+          for attempt in 1 2 3 4; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error title=Could not push::Recovery ran but the rows were not committed."
+          exit 1

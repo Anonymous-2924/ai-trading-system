@@ -351,7 +351,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: trading-log-${{ matrix.student }}-${{ github.run_id }}
-          path: trading-logs/
+          # ONLY this student's files. Uploading the whole directory meant
+          # every artifact also carried the other two students' CSVs exactly
+          # as checked out, which is what made a flattening download able to
+          # overwrite their fresh rows with stale ones. The Markdown mirrors
+          # are left out too: the commit job rebuilds them from the merged
+          # CSVs, so a stale copy here could only do harm.
+          path: |
+            trading-logs/${{ matrix.student }}.csv
+            trading-logs/alpha_${{ matrix.student }}.csv
+            trading-logs/trades_${{ matrix.student }}.csv
+            trading-logs/prices.csv
           if-no-files-found: warn
           retention-days: 7
 

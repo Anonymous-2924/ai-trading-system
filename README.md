@@ -84,7 +84,7 @@ pytest
 | `python scripts/await_market_window.py --window open` | Wait for the right point in the session |
 | `python scripts/check_alpaca.py` | Show which Alpaca account each key pair belongs to |
 | `streamlit run dashboard/app.py` | The control panel |
-| `pytest` | 454 tests |
+| `pytest` | 462 tests |
 
 ---
 
@@ -642,7 +642,7 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 
-- `pytest` (454 tests) on Python **3.11 and 3.12**, on every push and PR.
+- `pytest` (462 tests) on Python **3.11 and 3.12**, on every push and PR.
 - Runs the **demo pipeline end to end** and asserts the agent artefacts and
   all six log files were produced, and that no demo artefact claims live data.
 - Starts the **MCP server** and asserts every tool is strict-mode safe.
@@ -819,7 +819,7 @@ The composite score and conviction are gone. They lived only in that run's
 ## Testing
 
 ```bash
-pytest                      # 454 tests
+pytest                      # 462 tests
 pytest -m slow              # the live MCP server and the real-crew integration
 ```
 
@@ -864,7 +864,7 @@ I built this in a sandbox whose egress policy blocks every external host.
 
 ### Verified by actually running it
 
-- **454 tests pass** on Python 3.12.
+- **462 tests pass** on Python 3.12.
 - **Indicators against hand calculations.** RSI(3) = 78.333333 and ATR(3) =
   2.333333 on worked examples, matching to 1e-6.
 - **The MCP server started as a real subprocess** and all 10 tools called over

@@ -245,3 +245,25 @@ class TestTheWorkflowRebuildsEachLogWithItsOwnRenderer:
                 os.environ.pop("MAX_LLM_SYMBOLS", None)
             else:
                 os.environ["MAX_LLM_SYMBOLS"] = previous
+
+    def test_each_job_uploads_only_its_own_files(self):
+        """Defence in depth. Even if a flattening download came back, two
+        artifacts could no longer collide on a student's CSV."""
+        text = self.WORKFLOW.read_text()
+        assert "trading-logs/${{ matrix.student }}.csv" in text
+        assert "trading-logs/alpha_${{ matrix.student }}.csv" in text
+        assert "trading-logs/trades_${{ matrix.student }}.csv" in text
+
+    def test_the_markdown_mirrors_are_not_shipped_in_the_artifact(self):
+        """They are rebuilt from the merged CSVs; a stale copy could only
+        overwrite a good one."""
+        text = self.WORKFLOW.read_text()
+        upload = text.split("Stash this student's daily log")[1].split("commit-logs:")[0]
+        assert ".md" not in upload
+
+    def test_every_writer_of_the_logs_shares_one_lock(self):
+        """The trading run, the alpha backfill and the recovery all write
+        trading-logs/. Two at once would lose rows again."""
+        root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+        for name in ("trading-analysis.yml", "backfill-alpha.yml", "recover-logs.yml"):
+            assert "trading-logs-write" in (root / name).read_text(), name
