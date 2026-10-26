@@ -4,10 +4,17 @@ name: Trading analysis
 # Scheduled on weekdays, plus manual dispatch.
 #
 # ORDER SUBMISSION: only mode=execute sets REQUIRE_HUMAN_APPROVAL=false, and
-# BOTH are required before a single order leaves the runner. The scheduled
-# runs below have no `inputs`, so mode falls back to analyse and a cron run
-# NEVER places a trade. To trade, dispatch the workflow manually and choose
-# mode=execute.
+# BOTH are required before a single order leaves the runner.
+#
+#   Morning and afternoon crons  -> execute. THESE PLACE REAL PAPER ORDERS.
+#                                   Set the repository variable
+#                                   SCHEDULED_MODE=analyse to stop that
+#                                   without touching this file.
+#   End-of-day snapshot cron     -> analyse. Records closing equity only.
+#   Manual dispatch              -> whatever the human picks (default
+#                                   analyse, so a stray click cannot trade).
+#
+# The decision is made in ONE place, the "Decide the run mode" step below.
 # ---------------------------------------------------------------------------
 
 on:
