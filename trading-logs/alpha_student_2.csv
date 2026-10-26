@@ -1,0 +1,2 @@
+timestamp_utc,date,student_id,run_label,trades,open_trades,closed_trades,mean_return_pct,mean_excess_pct,mean_jensen_pct,total_pnl,win_rate_pct,ic_return,ic_excess,benchmark,data_source,note
+2026-10-26T10:29:49+00:00,2026-10-26,student_2,backfill,10,10,0,-0.9058,-0.0298,-0.2329,-1378.0452,50.0000,,,SPY,ALPACA_LIVE,"backfilled from Alpaca order history: the composite score at entry was not recorded for these trades, so the information coefficient cannot be computed for them"
