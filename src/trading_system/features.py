@@ -8,7 +8,7 @@ is JSON-serialisable and can cross the MCP boundary unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -37,6 +37,10 @@ class FeatureSet:
     as_of: str
     close: float
     values: Dict[str, float] = field(default_factory=dict)
+    #: Numbers the pipeline needs but does NOT score — ATR for stop sizing,
+    #: beta for position sizing, the raw opening range. Keeping them out of
+    #: ``values`` means the scored-feature count stays honest.
+    diagnostics: Dict[str, float] = field(default_factory=dict)
     dimension_of: Dict[str, str] = field(default_factory=dict)
     bars_available: int = 0
     warnings: List[str] = field(default_factory=list)
@@ -53,6 +57,7 @@ class FeatureSet:
             "close": self.close,
             "bars_available": self.bars_available,
             "features": self.values,
+            "diagnostics": self.diagnostics,
             "dimensions": self.dimension_of,
             "warnings": self.warnings,
         }
@@ -109,8 +114,20 @@ def normalise_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out.dropna(subset=["close"])
 
 
-def extract_features(symbol: str, df: pd.DataFrame) -> FeatureSet:
-    """Compute the full feature vector for the latest bar of `df`."""
+def extract_features(
+    symbol: str,
+    df: pd.DataFrame,
+    benchmarks: Optional[Mapping[str, pd.DataFrame]] = None,
+    intraday: Optional[pd.DataFrame] = None,
+) -> FeatureSet:
+    """Compute the full feature vector for the latest bar of `df`.
+
+    ``benchmarks`` maps a ticker (SPY, QQQ) to its daily frame and powers the
+    relative-strength and beta features. ``intraday`` is a 15-minute frame for
+    the same symbol and powers the opening-range and relative-volume
+    features. Both are optional: without them those features are NaN, which
+    the scorer treats as neutral rather than as a reason to fail.
+    """
     data = normalise_frame(df)
     o, h, l, c, v = (data[k] for k in REQUIRED_COLUMNS)
     n = len(data)
@@ -128,6 +145,10 @@ def extract_features(symbol: str, df: pd.DataFrame) -> FeatureSet:
     def put(name: str, dimension: str, value: float) -> None:
         fs.values[name] = _f(value)
         fs.dimension_of[name] = dimension
+
+    def diag(name: str, value: float) -> None:
+        """Record a number the pipeline needs but that is not scored."""
+        fs.diagnostics[name] = _f(value)
 
     price = _last(c)
 
@@ -154,20 +175,36 @@ def extract_features(symbol: str, df: pd.DataFrame) -> FeatureSet:
     hist = _last(macd_df["hist"])
     put("macd_hist_pct", MOMENTUM, 100.0 * hist / price if price else float("nan"))
     put("roc12", MOMENTUM, _last(ind.roc(c, 12)))
-    put("roc5", MOMENTUM, _last(ind.roc(c, 5)))
     put("tsi", MOMENTUM, _last(ind.tsi(c)))
+    # Relative strength: the stock's 20-day return minus the benchmark's.
+    # Positive means it outpaced the market. Without this every feature above
+    # would happily buy a stock up 3% on a day the market rose 4%.
+    marks = {k.upper(): v for k, v in (benchmarks or {}).items()}
+    for bench, feature in (("SPY", "rs_spy20"), ("QQQ", "rs_qqq20")):
+        frame = marks.get(bench)
+        if frame is None or "close" in getattr(frame, "columns", []) is False:
+            put(feature, MOMENTUM, float("nan"))
+            continue
+        try:
+            put(feature, MOMENTUM, _last(ind.relative_strength(c, frame["close"], 20)))
+        except Exception:
+            put(feature, MOMENTUM, float("nan"))
 
     # ---------------- VOLUME (5) ----------------
     put("cmf20", VOLUME, _last(ind.cmf(h, l, c, v, 20)))
     obv_series = ind.obv(c, v)
     put("obv_slope20", VOLUME, _slope_pct(obv_series.abs().replace(0.0, np.nan), 20))
     put("mfi14", VOLUME, _last(ind.mfi(h, l, c, v, 14)))
-    put("pvo", VOLUME, _last(ind.pvo(v)["pvo"]))
-    put("volume_z20", VOLUME, _last(ind.zscore(v, 20)))
+    # Relative volume against the same point in prior sessions. On the free
+    # IEX feed this sees only a slice of consolidated volume, so it is scored
+    # as a weak confirmation and never used as a hard gate.
+    put("rvol", VOLUME, ind.relative_volume(intraday) if intraday is not None else float("nan"))
 
     # ---------------- VOLATILITY (6) ----------------
     atr_series = ind.atr(h, l, c, 14)
-    put("atr14", VOLATILITY, _last(atr_series))
+    # ATR is needed for stop sizing but carries no direction, so it is a
+    # diagnostic rather than a scored feature.
+    diag("atr14", _last(atr_series))
     natr_series = ind.natr(h, l, c, 14)
     put("natr14", VOLATILITY, _last(natr_series))
     put("natr_z60", VOLATILITY, _last(ind.zscore(natr_series, 60)))
@@ -175,6 +212,17 @@ def extract_features(symbol: str, df: pd.DataFrame) -> FeatureSet:
     put("bb_width", VOLATILITY, _last(bb["width"]))
     put("bb_pct_b", VOLATILITY, _last(bb["pct_b"]))
     put("donchian_pos20", VOLATILITY, _last(ind.donchian(h, l, c, 20)["position"]))
+    # Opening-range position: 0 at the range low, 1 at the high, above 1 is an
+    # upside breakout. Needs intraday bars; NaN (neutral) without them.
+    orb = ind.opening_range(intraday, bars=1) if intraday is not None else {}
+    put("orb_pos", VOLATILITY, orb.get("position", float("nan")))
+    diag("orb_high", orb.get("high", float("nan")))
+    diag("orb_low", orb.get("low", float("nan")))
+    if intraday is not None and not intraday.empty:
+        # ATR on the intraday frame, for tighter bracket stops than the daily
+        # ATR would give.
+        diag("atr_intraday", _last(ind.atr(
+            intraday["high"], intraday["low"], intraday["close"], 14)))
 
     # ---------------- STATISTICS (5) ----------------
     put("zscore20", STATISTICS, _last(ind.zscore(c, 20)))
@@ -182,6 +230,18 @@ def extract_features(symbol: str, df: pd.DataFrame) -> FeatureSet:
     put("ret20", STATISTICS, _last(ind.trailing_return(c, 20)))
     put("ret60", STATISTICS, _last(ind.trailing_return(c, 60)))
     put("skew60", STATISTICS, _last(ind.rolling_skew(c, 60)))
+    # Beta against SPY: scored (low beta is mildly preferred for a given
+    # signal strength) and also used by the risk module to size down the
+    # jumpier names and by the alpha report for Jensen's alpha.
+    spy = marks.get("SPY")
+    beta = float("nan")
+    if spy is not None:
+        try:
+            beta = _last(ind.rolling_beta(c, spy["close"], 60))
+        except Exception:
+            beta = float("nan")
+    put("beta60", STATISTICS, beta)
+    diag("beta60", beta)
 
     return fs
 

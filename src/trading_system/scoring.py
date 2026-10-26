@@ -63,30 +63,33 @@ BASE_FEATURE_WEIGHTS: Dict[str, float] = {
     "ema50_200_spread": 0.14,
     "adx": 0.08,
     "di_bias": 0.10,
-    # momentum
-    "rsi14": 0.26,
-    "roc12": 0.26,
-    "roc5": 0.18,
-    "tsi": 0.30,
-    # volume
-    "cmf20": 0.30,
-    "obv_slope20": 0.20,
-    "mfi14": 0.25,
-    "pvo": 0.12,
-    "volume_z20": 0.13,
+    # momentum  (relative strength carries real weight: it is the only thing
+    # here that compares the stock with the market rather than with itself)
+    "rsi14": 0.20,
+    "roc12": 0.18,
+    "tsi": 0.20,
+    "rs_spy20": 0.25,
+    "rs_qqq20": 0.17,
+    # volume  (rvol is deliberately light: on the free IEX feed it sees only a
+    # slice of consolidated volume, so it confirms rather than decides)
+    "cmf20": 0.35,
+    "obv_slope20": 0.22,
+    "mfi14": 0.28,
+    "rvol": 0.15,
     # volatility
-    "atr14": 0.05,
-    "natr14": 0.15,
-    "natr_z60": 0.15,
-    "bb_width": 0.15,
-    "bb_pct_b": 0.25,
-    "donchian_pos20": 0.25,
+    "natr14": 0.16,
+    "natr_z60": 0.16,
+    "bb_width": 0.14,
+    "bb_pct_b": 0.22,
+    "donchian_pos20": 0.17,
+    "orb_pos": 0.15,
     # statistics
-    "zscore20": 0.20,
-    "ret5": 0.15,
-    "ret20": 0.30,
-    "ret60": 0.25,
+    "zscore20": 0.18,
+    "ret5": 0.12,
+    "ret20": 0.26,
+    "ret60": 0.22,
     "skew60": 0.10,
+    "beta60": 0.12,
 }
 
 MACD_FEATURES = {"macd_line": TREND, "macd_hist_pct": MOMENTUM}
@@ -176,6 +179,10 @@ def _score_feature(name: str, value: float, fs: Optional[FeatureSet] = None) -> 
         return _squash(value, 4.0)
     if name == "tsi":
         return _squash(value, 25.0)
+    if name in ("rs_spy20", "rs_qqq20"):
+        # Percent outperformance of the benchmark over 20 days. +5% is a
+        # strong relative-strength reading; -5% means the market carried it.
+        return _squash(value, 5.0)
 
     # --- volume ------------------------------------------------------------
     if name == "cmf20":
@@ -190,8 +197,13 @@ def _score_feature(name: str, value: float, fs: Optional[FeatureSet] = None) -> 
         # Rising participation confirms whatever the price is doing; on its own
         # it is weakly bullish.
         return _squash(value, 25.0)
-    if name == "volume_z20":
-        return _squash(value, 2.0)
+    if name == "rvol":
+        # 1.0 is a normal session. Heavy participation confirms a move;
+        # a very quiet tape is mildly discouraging. Capped tightly because
+        # the underlying data is only a slice of real volume.
+        if not math.isfinite(value) or value <= 0:
+            return 0.0
+        return clamp(_squash(value - 1.0, 1.5), -0.6, 0.6)
 
     # --- volatility --------------------------------------------------------
     if name == "atr14":
@@ -218,6 +230,10 @@ def _score_feature(name: str, value: float, fs: Optional[FeatureSet] = None) -> 
         return _tent(value, 0.0, 1.0, 1.15)
     if name == "donchian_pos20":
         return _tent(value, 0.0, 1.0, 1.10)
+    if name == "orb_pos":
+        # Opening-range breakout: above 1 the stock has cleared its first
+        # 15 minutes. Past 1.5 the move is extended and we stop adding credit.
+        return _tent(value, 0.0, 1.0, 1.50)
 
     # --- statistics --------------------------------------------------------
     if name == "zscore20":
@@ -232,6 +248,15 @@ def _score_feature(name: str, value: float, fs: Optional[FeatureSet] = None) -> 
         return _squash(value, 10.0)
     if name == "ret60":
         return _squash(value, 20.0)
+    if name == "beta60":
+        # The mandate WANTS high-beta exposure, so beta is near-neutral here
+        # and only penalised once it is genuinely extreme. Beta's real job in
+        # this system is position sizing (risk.py), not signal generation.
+        if not math.isfinite(value):
+            return 0.0
+        if value > 2.0:
+            return clamp(-(value - 2.0) / 1.5, -1.0, 0.0)
+        return 0.0
     if name == "skew60":
         # Positive skew = occasional large up-days, which is exactly the
         # payoff profile a high-beta growth sleeve is buying.
@@ -257,6 +282,18 @@ def macd_effective_weights(
         "macd_line": min(0.9, budget * MACD_TREND_SHARE / trend_w),
         "macd_hist_pct": min(0.9, budget * MACD_MOMENTUM_SHARE / mom_w),
     }
+
+
+def unweighted_features() -> List[str]:
+    """Scored features that carry no weight — they would be silently ignored.
+
+    Adding a feature to ``features.py`` without adding it here is an easy and
+    invisible mistake: the feature is computed, shown in the artefacts, and
+    contributes nothing. A test asserts this list stays empty.
+    """
+    dim_of = _dimension_lookup()
+    known = set(BASE_FEATURE_WEIGHTS) | set(MACD_FEATURES)
+    return sorted(name for name in dim_of if name not in known)
 
 
 def feature_weights(

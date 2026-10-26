@@ -47,8 +47,42 @@ class RuleEngineResult:
         return {s.symbol: s for s in self.signals}
 
     def atr_map(self) -> Dict[str, float]:
+        """ATR per symbol, for stop and target sizing.
+
+        Reads ``diagnostics``, not ``values``: ATR is carried as a diagnostic
+        because it has no direction and is not scored. Reading the wrong one
+        silently yields NaN, and the risk module then falls back to a flat 2%
+        band — a stop that looks real and is not.
+        """
         return {
-            sym: fs.values.get("atr14", float("nan")) for sym, fs in self.features.items()
+            sym: fs.diagnostics.get("atr14", float("nan"))
+            for sym, fs in self.features.items()
+        }
+
+    def intraday_atr_map(self) -> Dict[str, float]:
+        """Intraday ATR where 15-minute bars were available.
+
+        Tighter than the daily ATR, which is what the intraday playbook asks
+        for. Falls back to the daily value per symbol when absent.
+        """
+        out: Dict[str, float] = {}
+        for sym, fs in self.features.items():
+            value = fs.diagnostics.get("atr_intraday", float("nan"))
+            out[sym] = value if value == value else fs.diagnostics.get("atr14", float("nan"))
+        return out
+
+    def beta_map(self) -> Dict[str, float]:
+        """Beta per symbol, for volatility-adjusted position sizing."""
+        return {
+            sym: fs.diagnostics.get("beta60", float("nan"))
+            for sym, fs in self.features.items()
+        }
+
+    def natr_map(self) -> Dict[str, float]:
+        """Normalised ATR (percent of price) per symbol, for sizing."""
+        return {
+            sym: fs.values.get("natr14", float("nan"))
+            for sym, fs in self.features.items()
         }
 
     def price_map(self) -> Dict[str, float]:
@@ -70,8 +104,16 @@ def run_rule_engine(
     bars: Mapping[str, pd.DataFrame],
     articles: Sequence[Mapping] = (),
     cfg: Optional[AppConfig] = None,
+    benchmarks: Optional[Mapping[str, pd.DataFrame]] = None,
+    intraday: Optional[Mapping[str, pd.DataFrame]] = None,
 ) -> RuleEngineResult:
-    """Features -> ensemble score -> BUY/SELL/HOLD, for every symbol."""
+    """Features -> ensemble score -> BUY/SELL/HOLD, for every symbol.
+
+    ``benchmarks`` (SPY, QQQ daily frames) powers relative strength and beta.
+    ``intraday`` maps each symbol to its 15-minute frame and powers the
+    opening-range and relative-volume features. Both optional: without them
+    those features are neutral rather than fatal.
+    """
     sig_cfg = (cfg.signals if cfg else {}) or {}
     sen_cfg = (cfg.sentiment if cfg else {}) or {}
     sentiment_enabled = bool(sen_cfg.get("enabled", True))
@@ -97,7 +139,11 @@ def run_rule_engine(
             result.skipped[sym] = f"insufficient history ({have} bars, need 30+)"
             continue
         try:
-            fs = extract_features(sym, df)
+            fs = extract_features(
+                sym, df,
+                benchmarks=benchmarks,
+                intraday=(intraday or {}).get(sym),
+            )
         except Exception as exc:  # a malformed frame must not kill the run
             result.skipped[sym] = f"feature extraction failed: {exc}"
             log.exception("feature extraction failed for %s", sym)

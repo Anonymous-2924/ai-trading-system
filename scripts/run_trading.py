@@ -38,6 +38,10 @@ def main() -> int:
     p.add_argument("--max-llm-symbols", type=int, default=None)
     p.add_argument("--aggression", type=float, default=None, help="0.0 timid .. 1.0 maximal")
     p.add_argument("--json", action="store_true", help="print the full result as JSON")
+    p.add_argument(
+        "--run-label", default="",
+        help="tag for the trade ledger, e.g. morning or afternoon",
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
@@ -69,7 +73,9 @@ def main() -> int:
     if cfg.execute:
         print("!! ORDERS WILL BE SUBMITTED to the Alpaca PAPER account", flush=True)
 
-    results = run_all(cfg, students, symbols, use_llm=not args.no_llm)
+    results = run_all(
+        cfg, students, symbols, use_llm=not args.no_llm, run_label=args.run_label
+    )
 
     print()
     for r in results:

@@ -318,3 +318,125 @@ def rolling_skew(close, period: int = 60) -> pd.Series:
     c = _as_series(close)
     rets = np.log(c / c.shift(1).replace(0.0, np.nan))
     return rets.rolling(period, min_periods=max(10, period // 2)).skew()
+
+
+# ---------------------------------------------------------------------------
+# Relative strength, beta and intraday structure.
+#
+# Everything above measures a stock in isolation. These measure it against the
+# market, and against its own session — which is what the intraday playbook we
+# were given is really asking for, translated to the timeframes this system
+# can honestly support.
+# ---------------------------------------------------------------------------
+def align_pair(stock, benchmark):
+    """Align two price series on their shared dates.
+
+    Returns ``(stock, benchmark)`` restricted to timestamps present in both.
+    A benchmark that stops early (a halted or delisted symbol) therefore
+    shortens the window rather than producing silent NaNs.
+    """
+    a, b = _as_series(stock), _as_series(benchmark)
+    shared = a.index.intersection(b.index)
+    return a.reindex(shared).sort_index(), b.reindex(shared).sort_index()
+
+
+def relative_strength(stock, benchmark, period: int = 20) -> pd.Series:
+    """Stock return minus benchmark return over `period` bars, in percent.
+
+    Positive means the stock outpaced the benchmark. This is the filter that
+    stops us buying a name up 3% on a day the market is up 4%.
+    """
+    a, b = align_pair(stock, benchmark)
+    if len(a) <= period:
+        return pd.Series(dtype="float64", index=a.index)
+    stock_ret = 100.0 * (a / a.shift(period).replace(0.0, np.nan) - 1.0)
+    bench_ret = 100.0 * (b / b.shift(period).replace(0.0, np.nan) - 1.0)
+    return stock_ret - bench_ret
+
+
+def rolling_beta(stock, benchmark, period: int = 60) -> pd.Series:
+    """Rolling CAPM beta of the stock against the benchmark.
+
+    beta = cov(stock returns, benchmark returns) / var(benchmark returns)
+
+    Used both for position sizing (a high-beta name gets a smaller
+    allocation) and for Jensen's alpha in the performance analysis.
+    """
+    a, b = align_pair(stock, benchmark)
+    stock_ret = a.pct_change()
+    bench_ret = b.pct_change()
+    min_obs = max(20, period // 3)
+    cov = stock_ret.rolling(period, min_periods=min_obs).cov(bench_ret)
+    var = bench_ret.rolling(period, min_periods=min_obs).var()
+
+    # A benchmark with (near) zero variance makes beta explode: dividing by
+    # 1e-20 of floating-point noise produced a beta of 6.5e10 in testing, which
+    # would then drive position sizing to nonsense. Anything below this floor
+    # is treated as "no usable benchmark variation" rather than as a number.
+    var = var.where(var > 1e-12)
+    beta = cov / var
+
+    # Equity betas outside this range are a data problem, not a measurement.
+    return beta.where(beta.abs() <= 5.0)
+
+
+def opening_range(intraday: pd.DataFrame, bars: int = 1) -> dict:
+    """High and low of the session's first `bars` intraday candles.
+
+    With 15-minute bars, ``bars=1`` is the 09:30-09:45 opening range. Returns
+    an empty dict when the frame does not cover a session open, so callers can
+    treat "no range yet" differently from "range not broken".
+    """
+    if intraday is None or intraday.empty:
+        return {}
+    frame = intraday.sort_index()
+    last_day = frame.index[-1].normalize()
+    session = frame[frame.index.normalize() == last_day]
+    if len(session) < bars:
+        return {}
+    window = session.iloc[:bars]
+    high = float(window["high"].max())
+    low = float(window["low"].min())
+    last = float(session["close"].iloc[-1])
+    span = high - low
+    return {
+        "high": high,
+        "low": low,
+        "last": last,
+        # 0 at the range low, 1 at the range high, >1 is an upside breakout.
+        "position": (last - low) / span if span > 0 else float("nan"),
+        "bars_in_session": int(len(session)),
+    }
+
+
+def relative_volume(intraday: pd.DataFrame, lookback_sessions: int = 10) -> float:
+    """Volume so far today against the same point in prior sessions.
+
+    Above 1.0 means the stock is trading more heavily than usual for this time
+    of day. NOTE: on Alpaca's free IEX feed this covers only a small slice of
+    consolidated volume, so it is a weak confirming signal, never a gate.
+    """
+    if intraday is None or intraday.empty:
+        return float("nan")
+    frame = intraday.sort_index()
+    days = sorted({ts.normalize() for ts in frame.index})
+    if len(days) < 2:
+        return float("nan")
+    today = days[-1]
+    session = frame[frame.index.normalize() == today]
+    bars_so_far = len(session)
+    if bars_so_far == 0:
+        return float("nan")
+    today_volume = float(session["volume"].sum())
+
+    # Compare against the same number of bars from each earlier session, so a
+    # 10:05 reading is not measured against a full prior day.
+    history = []
+    for day in days[-(lookback_sessions + 1) : -1]:
+        prior = frame[frame.index.normalize() == day]
+        if len(prior) >= bars_so_far:
+            history.append(float(prior["volume"].iloc[:bars_so_far].sum()))
+    if not history:
+        return float("nan")
+    baseline = float(np.mean(history))
+    return today_volume / baseline if baseline > 0 else float("nan")

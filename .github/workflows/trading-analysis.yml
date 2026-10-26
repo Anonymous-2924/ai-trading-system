@@ -13,29 +13,40 @@ name: Trading analysis
 on:
   schedule:
     # ---------------------------------------------------------------------
-    # Both times are chosen so they land correctly in BOTH US daylight time
-    # (EDT, UTC-4) and US standard time (EST, UTC-5). The clocks change in
-    # early November and early March; a cron that is correct in one is often
-    # wrong in the other, so neither of these sits near a boundary.
+    # THREE fixed crons, but the TIME WE ACT is decided at runtime by asking
+    # Alpaca when the session actually opens and closes
+    # (scripts/await_market_window.py). Two reasons a fixed UTC cron cannot
+    # do this on its own:
     #
-    #   14:45 UTC  =  10:45 ET (EDT)  /  09:45 ET (EST)   <- market OPEN in both
-    #   21:30 UTC  =  17:30 ET (EDT)  /  16:30 ET (EST)   <- market CLOSED in both
+    #   1. The US close moves an hour when the clocks change on 1 November,
+    #      so "30 minutes before the close" is 19:30 UTC in summer and
+    #      20:30 UTC in winter.
+    #   2. GitHub's scheduler is best-effort; we have measured a delay of
+    #      over three hours.
     #
-    # In IST (UTC+5:30) that is 20:15 the same evening, and 03:00 the
-    # following morning.
+    # So each cron fires EARLY and the job waits for its real target:
+    #
+    #   14:00 UTC -> waits until 10:05 ET  (35 min after the open: the
+    #                09:30-09:45 opening range has formed and settled past
+    #                the data delay, and we are inside the opening power
+    #                hour rather than in the opening auction)
+    #   19:25 UTC -> waits until 15:30 ET  (30 min before the close, in the
+    #                closing power hour)
+    #
+    # In IST that is about 19:30 and 00:55. Both avoid the 11:30-13:30 ET
+    # midday lull entirely.
     # ---------------------------------------------------------------------
 
-    # THE TRADING RUN. Fires early in the US session on purpose. GitHub's
-    # scheduler is best-effort and has delayed us by over three hours; at
-    # 19:30 UTC that pushed the run past the closing bell and the orders
-    # queued overnight. 14:45 UTC leaves roughly five hours of headroom
-    # before the market shuts, in either US time zone.
-    - cron: "45 14 * * 1-5"
+    # Morning trading run.
+    - cron: "0 14 * * 1-5"
 
-    # THE END-OF-DAY SNAPSHOT. Analysis is skipped entirely (--no-llm, no
-    # orders); this exists only to append the closing equity to each member's
-    # daily log. It costs zero LLM quota.
+    # Afternoon trading run.
+    - cron: "25 19 * * 1-5"
+
+    # Closing-equity snapshot. No AI, no orders, zero LLM quota — it exists
+    # only so the daily log records the true closing equity.
     - cron: "30 21 * * 1-5"
+
   workflow_dispatch:
     inputs:
       mode:
@@ -162,9 +173,49 @@ jobs:
           python scripts/test_llm.py --timeout 20 || \
             echo "::warning title=LLM check failed::The run will fall back to the deterministic rule engine."
 
+      - name: Wait for the right point in the session
+        id: window
+        if: steps.creds.outputs.has_creds == 'true' && github.event_name == 'schedule'
+        env:
+          FIRED_SCHEDULE: ${{ github.event.schedule }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          DEMO_MODE: "false"
+        run: |
+          # The snapshot does not care where we are in the session.
+          if [ "$FIRED_SCHEDULE" = "30 21 * * 1-5" ]; then
+            echo "snapshot run; no waiting required."
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$FIRED_SCHEDULE" in
+            "0 14 * * 1-5")  WINDOW=open  ;;
+            "25 19 * * 1-5") WINDOW=close ;;
+            *)               WINDOW=close ;;
+          esac
+
+          # 70 minutes covers the worst case: a cron placed to suit US
+          # daylight time has to wait an extra hour once the clocks change.
+          set +e
+          python scripts/await_market_window.py --window "$WINDOW" --max-wait 4200
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$STATUS" -eq 10 ]; then
+            echo "::notice title=Window missed::Not a usable point in the session (weekend, holiday, or the scheduler fired too late). Skipping without trading."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Could not check the clock::Proceeding anyway; the run will still record a log row."
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run the pipeline
         id: run
-        if: steps.creds.outputs.has_creds == 'true'
+        if: |
+          steps.creds.outputs.has_creds == 'true'
+          && (github.event_name != 'schedule' || steps.window.outputs.proceed == 'true')
         env:
           # Which cron fired, if any. Empty for a manual dispatch.
           FIRED_SCHEDULE: ${{ github.event.schedule }}
@@ -192,6 +243,13 @@ jobs:
           fi
 
           EXTRA=""
+          case "$FIRED_SCHEDULE" in
+            "0 14 * * 1-5")  LABEL=morning   ;;
+            "25 19 * * 1-5") LABEL=afternoon ;;
+            "30 21 * * 1-5") LABEL=snapshot  ;;
+            *)               LABEL=manual    ;;
+          esac
+
           if [ "$FIRED_SCHEDULE" = "30 21 * * 1-5" ]; then
             # The end-of-day snapshot: record closing equity, decide nothing,
             # trade nothing, spend no LLM quota.
@@ -218,7 +276,8 @@ jobs:
           echo "effective_mode=$RUN_MODE" >> "$GITHUB_OUTPUT"
 
           python scripts/run_trading.py \
-            --students "${{ matrix.student }}" $EXTRA \
+            --students "${{ matrix.student }}" \
+            --run-label "$LABEL" $EXTRA \
             2>&1 | tee "run-${{ matrix.student }}.log"
 
       - name: Write the job summary
@@ -338,16 +397,33 @@ jobs:
           PY
           ls -la trading-logs/ || true
 
+      - name: Regenerate the alpha report
+        continue-on-error: true
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY_1 }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY_1 }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          DEMO_MODE: "false"
+        run: |
+          # Read-only: it prices the trades already in the ledger. Any one
+          # student's keys work, since market data is not account-specific.
+          # continue-on-error because a missing report must never block the
+          # daily logs from being committed.
+          python -m pip install --upgrade pip >/dev/null
+          pip install --ignore-installed PyYAML -r requirements.txt >/dev/null
+          python scripts/alpha_report.py --out analysis/alpha_report.md || \
+            echo "::warning title=Alpha report skipped::Could not regenerate it this run."
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add trading-logs/
+          git add trading-logs/ analysis/ 2>/dev/null || git add trading-logs/
           if git diff --cached --quiet; then
             echo "No daily-log changes to commit."
             exit 0
           fi
-          git commit -m "chore(logs): daily trading logs for $(date -u +%Y-%m-%d) [skip ci]"
+          git commit -m "chore(logs): trading logs and alpha report for $(date -u +%Y-%m-%d) [skip ci]"
           # Another run may have pushed while this job was working.
           for attempt in 1 2 3 4; do
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \

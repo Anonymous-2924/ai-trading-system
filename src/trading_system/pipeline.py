@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from . import daily_log
+from . import daily_log, trade_ledger
 from .agents import CrewRunResult, run_crew
 from .alpaca_client import AlpacaClient, AlpacaError, MarketDataUnavailable, build_client
 from .config import AppConfig, StudentConfig
@@ -36,6 +36,11 @@ log = logging.getLogger(__name__)
 
 RULE_ENGINE = "deterministic_rule_engine"
 CREW_ENGINE = "crewai_agents"
+
+#: Fetched alongside the universe in the same batched request. SPY is the
+#: broad market, QQQ the tech-heavy comparison the high-beta sleeve is really
+#: competing against.
+BENCHMARKS = ("SPY", "QQQ")
 
 
 @dataclass
@@ -176,6 +181,7 @@ def run_for_student(
     symbols: Optional[Sequence[str]] = None,
     use_llm: bool = True,
     run_logger: Optional[RunLogger] = None,
+    run_label: str = "",
 ) -> RunResult:
     """Run the whole pipeline for one student.  Always returns a RunResult."""
     student = cfg.student(student_id)
@@ -188,22 +194,40 @@ def run_for_student(
 
     client: Optional[AlpacaClient] = None
     bars: Dict[str, Any] = {}
+    benchmarks: Dict[str, Any] = {}
+    intraday: Dict[str, Any] = {}
     articles: List[dict] = []
 
     # --- 1 & 2: market data and news, batched ---------------------------
     try:
         client = build_client(cfg, student)
         result.data_source = client.data_source
-        bars = client.get_bars(syms, days=cfg.lookback_days)
+        # Benchmarks ride along in the SAME batched request as the universe,
+        # so relative strength and beta cost no extra round trip.
+        with_benchmarks = list(syms) + [b for b in BENCHMARKS if b not in syms]
+        fetched = client.get_bars(with_benchmarks, days=cfg.lookback_days)
+        bars = {k: v for k, v in fetched.items() if k in set(syms)}
+        benchmarks = {b: fetched[b] for b in BENCHMARKS if b in fetched}
         result.notes.append(
-            f"OHLCV for {len(bars)}/{len(syms)} symbols in "
-            f"{client.last_request_count} HTTP request(s)"
+            f"OHLCV for {len(bars)}/{len(syms)} symbols (plus "
+            f"{len(benchmarks)} benchmark(s)) in {client.last_request_count} "
+            "HTTP request(s)"
         )
+        if not benchmarks:
+            result.notes.append(
+                "no benchmark data; relative strength and beta are neutral "
+                "this run"
+            )
     except (MarketDataUnavailable, PaperTradingViolation, AlpacaError) as exc:
         result.errors.append(f"market data: {exc}")
         log.error("market data failed for %s: %s", student.id, exc)
 
     if client is not None and bars:
+        # 15-minute bars for the opening range and relative volume. Batched,
+        # and optional: a weekend or a feed gap leaves those features neutral.
+        intraday = client.get_intraday_bars(syms, timeframe="15Min", days=12)
+        if intraday:
+            result.notes.append(f"intraday bars for {len(intraday)} symbol(s)")
         try:
             hours = int((cfg.sentiment or {}).get("lookback_hours", 48))
             articles = client.get_news(syms, hours=hours)
@@ -231,7 +255,9 @@ def run_for_student(
         return result
 
     # --- 3: the deterministic rule engine, always -----------------------
-    rule_result = run_rule_engine(syms, bars, articles, cfg)
+    rule_result = run_rule_engine(
+        syms, bars, articles, cfg, benchmarks=benchmarks, intraday=intraday
+    )
     result.notes.extend(rule_result.notes)
     rl.write(
         "Technical Analysis Agent",
@@ -321,6 +347,13 @@ def run_for_student(
         high_beta_symbols=student.high_beta,
         atr_by_symbol=rule_result.atr_map(),
         price_by_symbol=rule_result.price_map(),
+        natr_by_symbol=rule_result.natr_map(),
+        beta_by_symbol=rule_result.beta_map(),
+        stop_atr_by_symbol=(
+            rule_result.intraday_atr_map()
+            if cfg.risk.bracket_use_intraday_atr
+            else rule_result.atr_map()
+        ),
     )
     result.plan = plan
     result.notes.extend(plan.notes)
@@ -350,20 +383,47 @@ def run_for_student(
     elif client is None:
         result.errors.append("cannot submit orders: no Alpaca client")
     else:
+        fills = []
         for order in plan.orders:
             try:
+                # Brackets are for ENTRIES only: an exit is a plain market
+                # sell, and attaching a stop to it makes no sense.
+                attach = (
+                    cfg.risk.use_bracket_orders
+                    and order.side == "buy"
+                    and order.stop_loss
+                    and order.take_profit
+                )
                 res = client.submit_order(
                     order.symbol,
                     order.qty,
                     order.side,
                     order.client_order_id,
+                    stop_loss=order.stop_loss if attach else None,
+                    take_profit=order.take_profit if attach else None,
                 )
                 result.submitted.append(res)
+                fills.append(
+                    trade_ledger.build_fill(
+                        student_id=student.id,
+                        order=order,
+                        result=res,
+                        engine=result.engine,
+                        run_label=run_label,
+                    )
+                )
             except (PaperTradingViolation, MarketDataUnavailable) as exc:
                 result.errors.append(f"{order.symbol}: BLOCKED {exc}")
                 log.error("order blocked for %s: %s", order.symbol, exc)
             except AlpacaError as exc:
                 result.errors.append(f"{order.symbol}: order failed {exc}")
+        ledger_status = trade_ledger.append_fills(fills, cfg.log_dir)
+        if not ledger_status.get("ok"):
+            result.errors.append(f"trade ledger failed: {ledger_status.get('error')}")
+        elif ledger_status.get("written"):
+            result.notes.append(
+                f"recorded {ledger_status['written']} order(s) in the trade ledger"
+            )
 
     fallback_banner = ""
     if result.fallbacks:
@@ -436,12 +496,15 @@ def run_all(
     student_ids: Optional[Sequence[str]] = None,
     symbols: Optional[Sequence[str]] = None,
     use_llm: bool = True,
+    run_label: str = "",
 ) -> List[RunResult]:
     ids = list(student_ids) if student_ids else [s.id for s in cfg.students]
     out: List[RunResult] = []
     for sid in ids:
         try:
-            out.append(run_for_student(cfg, sid, symbols, use_llm))
+            out.append(
+                run_for_student(cfg, sid, symbols, use_llm, run_label=run_label)
+            )
         except KeyError as exc:
             log.error("skipping unknown student: %s", exc)
         except Exception as exc:  # one student must not sink the rest

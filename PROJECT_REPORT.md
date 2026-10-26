@@ -59,10 +59,19 @@ Every run follows the same six steps for each team member.
 | Category | What it measures | Indicators used |
 |---|---|---|
 | Trend | Which direction the stock is moving | EMA 20/50/200, ADX, MACD line |
-| Momentum | How fast it is moving and whether that is changing | RSI, MACD histogram, ROC, TSI |
-| Volume | Whether real buying or selling is behind the move | CMF, OBV, MFI, PVO |
-| Volatility | How much the stock swings around | ATR, NATR, Bollinger width and %B, Donchian |
-| Statistics | How unusual today is compared with the stock's own history | Z-score, 5/20/60-day returns, skew |
+| Momentum | How fast it is moving, and how it compares with the market | RSI, MACD histogram, ROC, TSI, **relative strength vs SPY and QQQ** |
+| Volume | Whether real buying or selling is behind the move | CMF, OBV, MFI, **relative volume** |
+| Volatility | How much the stock swings, and where it sits in today's range | NATR, Bollinger width and %B, Donchian, **opening-range position** |
+| Statistics | How unusual today is compared with the stock's own history | Z-score, 5/20/60-day returns, skew, **beta** |
+
+The five highlighted features were added after reviewing a set of intraday
+trading guidelines. We will be honest that those guidelines assume
+minute-by-minute monitoring, which a system running twice a day cannot do, so
+we adopted the parts that survive translation to our timeframes and did not
+attempt the parts that do not. Relative strength is the most important
+addition: without it, every other indicator will happily buy a stock that is
+up 3% on a day when the market is up 4%, which is underperformance dressed up
+as a gain.
 
 **Step 3 — Score them.** Each of the 29 measurements is converted into a score between −1 (very bearish) and +1 (very bullish). Scores are averaged within their category, and the five categories are then combined along with a news sentiment score using fixed weights:
 
@@ -180,7 +189,11 @@ Deciding what to buy is only half the problem. The risk module handles how much,
 
 **Position sizing.** Each position is a percentage of the account, multiplied by the conviction level. Low conviction opens no position at all.
 
-**Stops and targets based on ATR.** ATR measures how much a stock typically moves in a day. We set the stop loss at about 2.5 times ATR below the entry price and the profit target at about 5 times ATR above it. Using ATR rather than a fixed percentage means a volatile stock gets a proportionally wider stop and is not thrown out by its own ordinary movement. The roughly 1:2 ratio between stop and target means the strategy can be right less than half the time and still make money.
+**Stops and targets based on ATR, attached to the order.** ATR measures how much a stock typically moves in a day. We set the stop loss at about 2.5 times ATR below the entry price and the profit target at about 5 times ATR above it. Using ATR rather than a fixed percentage means a volatile stock gets a proportionally wider stop and is not thrown out by its own ordinary movement. The roughly 1:2 ratio between stop and target means the strategy can be right less than half the time and still make money.
+
+These are now sent to Alpaca as bracket orders, which means the broker holds the stop and the target itself. Until we fixed this, the stop was calculated and written into our records but never actually submitted, so the only real exit was the next scheduled run noticing that the score had fallen. Between runs the position was unprotected, and an overnight gap had nothing standing in its way. Alpaca does not accept fractional quantities on bracket orders, so a bracketed entry is rounded down to whole shares, and anything that rounds below one share is skipped rather than sent without protection.
+
+**Position size scaled by volatility.** Previously every position was the same percentage of the account whether it was Procter & Gamble or a crypto miner. Since a stock that swings 9% a day carries roughly four times the risk of one that swings 2%, this meant the jumpiest names quietly dominated the portfolio's risk even though they took up the same amount of money. Position size is now divided by the stock's own volatility relative to a reference level, so each holding contributes roughly equal risk rather than equal dollars. On a $100,000 account at high conviction, a very calm stock is now allocated about $15,750 while an extremely volatile one gets about $3,900.
 
 **Limits.** No single stock above about 18% of the account, no single sector above 40%, total exposure capped at about 1.16 times equity, and a minimum cash buffer that is always preserved.
 
@@ -224,10 +237,21 @@ API keys are never stored in the code. They are kept as GitHub encrypted secrets
 
 Everything runs on GitHub Actions without anyone starting it. There are two scheduled runs each weekday:
 
-| Time (UTC) | Time (IST) | Purpose |
+| Cron (UTC) | Acts at (US Eastern) | Purpose |
 |---|---|---|
-| 14:45 | 20:15 same day | Full analysis and trading |
-| 21:30 | 03:00 next day | Records closing equity only; cannot trade |
+| 14:00 | 10:05, 35 min after the open | Morning trading run |
+| 19:25 | 15:30, 30 min before the close | Afternoon trading run |
+| 21:30 | after the close | Records closing equity only; cannot trade |
+
+The crons fire early and the job then waits for its real target. This is
+necessary for two reasons. First, the US close moves by an hour when the
+clocks change on 1 November, so "30 minutes before the close" is a different
+UTC time in summer and winter. Second, GitHub's scheduler is only best-effort
+and delayed one of our runs by more than three hours. The job asks Alpaca's
+calendar when the session actually opens and closes, waits for the right
+moment, and if the delay has been so long that the window has passed it skips
+the run rather than trading at the wrong time. Both runs sit inside the busy
+opening and closing hours and avoid the quiet midday period.
 
 The trading run is timed to fall inside US market hours so that orders fill in the same session rather than queuing overnight. We chose times that stay on the correct side of the opening and closing bells in both US daylight and standard time, since the US clocks change in early November during our trading period. We also placed the trading run early in the session rather than late, because GitHub's scheduler is only best-effort and delayed one of our runs by more than three hours; starting at 14:45 UTC leaves about five hours of margin before the market closes.
 
@@ -235,7 +259,21 @@ The three accounts run one at a time rather than together. Each uses its own Alp
 
 The clever part is how the records survive. A cloud server is wiped after each job, so anything written there would normally be lost. After every run, the system commits the updated profit and loss files back into our GitHub repository. This means the full history is stored in version control, timestamped, with a complete audit trail of every change. A separate job handles this after all three accounts have finished, so they cannot interfere with each other.
 
-### 5.9 Dashboard
+### 5.9 Measuring whether any of it works
+
+Our daily log records where each account stands, but it cannot say whether a particular trade was a good one, or whether the indicators predict anything at all, because it only stores daily totals.
+
+We therefore added a trade ledger that records one row for every order, carrying the signal that caused it: the composite score, the conviction level, which engine decided, and the volatility scaling used. A separate analysis script joins those rows against later prices and produces three measures:
+
+- **Excess return** — the stock's return minus the market's over the same period. Did we beat the market on the names we chose?
+- **Jensen's alpha** — the stock's return minus its beta multiplied by the market's return. Did we beat the market after adjusting for the extra risk we took? This is the stricter and more honest test for a portfolio that is deliberately high-beta, because a stock that rises 3% while the market rises 4% has actually underperformed what its risk should have paid.
+- **Information coefficient** — the correlation between our composite score at entry and the return that followed. Do the indicators predict anything?
+
+It also breaks the results down by conviction level. If our VERY_HIGH conviction trades do not outperform our MEDIUM ones, then the conviction mechanism is decorative and we should say so.
+
+We want to be clear that over a handful of trading days all of these numbers are dominated by noise. This is a framework for judging the strategy rather than a judgement of it, and the report says so in its own output.
+
+### 5.10 Dashboard
 
 We also built a Streamlit dashboard for manual use. It allows entering Alpaca keys (held only for the browser session, never written to disk), selecting stocks and indicator categories, adjusting the aggression and scoring thresholds, starting a run, reviewing the recommendations with the full breakdown of why each decision was made, approving individual trades before anything is sent, and viewing positions, profit and loss, and the daily logs with an equity chart.
 
@@ -302,7 +340,7 @@ We verified the fix by simulating a crew that hangs indefinitely and confirming 
 
 ## 8. Testing
 
-We have 297 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
+We have 370 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
 
 Beyond the unit tests we also:
 

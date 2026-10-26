@@ -79,8 +79,11 @@ pytest
 | `python scripts/test_llm.py` | Four-stage LLM check in about a minute |
 | `python scripts/test_llm.py --list-models` | List the models **your** account can see |
 | `python scripts/run_mcp_server.py` | Run the MCP server on stdio |
+| `python scripts/alpha_report.py` | Attribute performance: excess return, Jensen's alpha, signal IC |
+| `python scripts/await_market_window.py --window open` | Wait for the right point in the session |
+| `python scripts/check_alpaca.py` | Show which Alpaca account each key pair belongs to |
 | `streamlit run dashboard/app.py` | The control panel |
-| `pytest` | 297 tests |
+| `pytest` | 370 tests |
 
 ---
 
@@ -173,10 +176,26 @@ neither imported nor in `requirements.txt`.
 | Dimension | Features | Count |
 | --- | --- | --- |
 | **Trend** | `ema20_rel`, `ema50_rel`, `ema200_rel`, `ema20_50_spread`, `ema50_200_spread`, `adx`, `di_bias`, `macd_line` | 8 |
-| **Momentum** | `rsi14`, `macd_hist_pct`, `roc12`, `roc5`, `tsi` | 5 |
-| **Volume** | `cmf20`, `obv_slope20`, `mfi14`, `pvo`, `volume_z20` | 5 |
-| **Volatility** | `atr14`, `natr14`, `natr_z60`, `bb_width`, `bb_pct_b`, `donchian_pos20` | 6 |
-| **Statistics** | `zscore20`, `ret5`, `ret20`, `ret60`, `skew60` | 5 |
+| **Momentum** | `rsi14`, `macd_hist_pct`, `roc12`, `tsi`, `rs_spy20`, `rs_qqq20` | 6 |
+| **Volume** | `cmf20`, `obv_slope20`, `mfi14`, `rvol` | 4 |
+| **Volatility** | `natr14`, `natr_z60`, `bb_width`, `bb_pct_b`, `donchian_pos20`, `orb_pos` | 6 |
+| **Statistics** | `zscore20`, `ret5`, `ret20`, `ret60`, `skew60`, `beta60` | 6 |
+
+**Relative strength** (`rs_spy20`, `rs_qqq20`) is the stock's 20-day return
+minus the benchmark's. Without it every other feature happily buys a stock up
+3% on a day the market is up 4% — which is underperformance dressed as a gain.
+The benchmarks ride along in the same batched request, so they cost no extra
+round trip.
+
+`orb_pos` and `rvol` are the daily-bar translation of the opening-range and
+relative-volume ideas from intraday trading: the position of price within the
+session's first 15-minute range, and volume so far today against the same
+point in prior sessions. Both need 15-minute bars and are neutral without
+them. **`rvol` is scored as a weak confirmation and never as a gate**, because
+Alpaca's free IEX feed sees only a small slice of consolidated volume.
+
+ATR is computed but **not scored** — it has no direction. It is carried as a
+diagnostic for stop sizing, alongside beta and the raw opening range.
 
 Plus news sentiment as a sixth weighted input.
 
@@ -434,8 +453,23 @@ validates the MCP layer when the LLM is down.
 
 `src/trading_system/risk.py`.
 
-- **Position sizing** — base % of equity × conviction multiplier, clipped by
-  the single-name cap.
+- **Position sizing** — base % of equity × conviction multiplier ×
+  **volatility scale**, clipped by the single-name cap. Equal-dollar sizing
+  meant a stock swinging 9% a day carried roughly four times the risk of one
+  swinging 2%, so the jumpiest names quietly dominated the book. Size is now
+  divided by the stock's NATR relative to a reference (beta is the fallback),
+  so each position contributes roughly equal *risk* rather than equal
+  *dollars*:
+
+  | Profile | NATR | Scale | Position on $100k, HIGH |
+  | --- | --- | --- | --- |
+  | Very calm (KO-like) | 1.2% | 1.40× | $15,750 |
+  | Normal | 3.0% | 1.00× | $11,250 |
+  | High-beta (TSLA-like) | 8.0% | 0.38× | $4,219 |
+  | Extreme (MARA-like) | 14.0% | 0.35× | $3,938 |
+
+  An unknown volatility scores 1.0×, so a missing input never silently shrinks
+  a position to nothing.
 - **Exits before entries.** SELLs are planned first and their proceeds are
   added to the cash available to the same run's BUYs, so freed capital is
   recycled immediately instead of idling for a day.
@@ -443,8 +477,16 @@ validates the MCP layer when the LLM is down.
   short. Enforced in the planner *and* in the `place_paper_order` MCP tool.
 - **Caps** — max positions, gross exposure, single name, single sector, and a
   minimum cash buffer. Each rejection records which cap bound it.
-- **ATR stops and targets** — both ATR multiples, so a volatile name gets a
-  proportionally wider stop.
+- **ATR stops and targets, sent as real bracket orders.** Both are ATR
+  multiples, so a volatile name gets a proportionally wider stop — and both
+  are now attached to the entry at Alpaca (`order_class: bracket`), so the
+  stop protects the position **between runs**. Previously they were computed
+  and logged but never submitted, which meant an overnight gap had nothing
+  standing in its way. The stop prefers the intraday ATR where 15-minute bars
+  exist, since the daily ATR gives a very wide stop on a high-beta name.
+  Alpaca rejects fractional bracket orders, so a bracketed entry is rounded
+  **down** to whole shares; anything that rounds below one share is skipped
+  rather than sent unprotected.
 - **Buying-power checks** against the live account.
 - **Deterministic `client_order_id`s** — `sha256(student|symbol|side|qty|UTC date)`.
   Re-running the same day produces the same id, Alpaca rejects the duplicate,
@@ -540,23 +582,23 @@ Two guarantees, both tested:
 
 ### `.github/workflows/trading-analysis.yml`
 
-- **Schedule:** two runs every weekday.
+- **Schedule:** two trading runs plus a snapshot every weekday. The crons
+  fire EARLY and the job then waits for its real target, because a fixed UTC
+  cron cannot express "30 minutes before the close": that is 19:30 UTC in US
+  daylight time and 20:30 UTC in standard time, and GitHub's scheduler has
+  fired one of our runs **over three hours late**.
 
-  | Cron (UTC) | IST | US Eastern | What it does |
+  | Cron (UTC) | Waits until | US Eastern | What it does |
   | --- | --- | --- | --- |
-  | `45 14 * * 1-5` | 20:15 same day | 10:45 EDT / 09:45 EST — **market open** | The trading run. Full analysis, places orders. |
-  | `30 21 * * 1-5` | 03:00 next day | 17:30 EDT / 16:30 EST — **market closed** | Closing-equity snapshot. `--no-llm`, no orders, zero LLM quota. |
+  | `0 14 * * 1-5` | 10:05 ET | 35 min after the open | Morning trading run. The 09:30–09:45 opening range has formed and settled past the feed delay, and we are in the opening power hour rather than the opening auction. |
+  | `25 19 * * 1-5` | 15:30 ET | 30 min before the close | Afternoon trading run, in the closing power hour. |
+  | `30 21 * * 1-5` | — | after the close | Closing-equity snapshot. `--no-llm`, no orders, zero LLM quota. |
 
-  Both times are deliberately far from the EDT/EST boundary, so they stay on
-  the correct side of the opening and closing bells when the US clocks change
-  in March and November. The trading run sits early in the session on
-  purpose: GitHub's scheduler is best-effort and has delayed a run by over
-  three hours, so 14:45 UTC leaves roughly five hours of headroom before the
-  closing bell.
-
-  Each cron gets its own `concurrency` group. A single shared group meant a
-  delayed trading run was still going when the snapshot fired, and the
-  snapshot queued behind it.
+  `scripts/await_market_window.py` asks Alpaca's calendar when the session
+  actually opens and closes, so the 1 November clock change cannot break it.
+  If the scheduler fires so late that the window is gone, the run is skipped
+  with a notice rather than trading at the wrong time. Both runs avoid the
+  11:30–13:30 ET midday lull entirely.
 
   Plus `workflow_dispatch` with inputs for `mode`, `students`, `model`,
   `max_llm_symbols` and `aggression`.
@@ -599,7 +641,7 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 
-- `pytest` (297 tests) on Python **3.11 and 3.12**, on every push and PR.
+- `pytest` (370 tests) on Python **3.11 and 3.12**, on every push and PR.
 - Runs the **demo pipeline end to end** and asserts the agent artefacts and
   all six log files were produced, and that no demo artefact claims live data.
 - Starts the **MCP server** and asserts every tool is strict-mode safe.
@@ -664,10 +706,36 @@ invented, and the news agent's instructions say so explicitly.
 
 ---
 
+## Alpha attribution
+
+`trading-logs/trades_<student>.csv` records one row per order with the signal
+that caused it — composite score, conviction, engine, volatility scale, beta.
+`scripts/alpha_report.py` joins those rows against later prices and writes
+`analysis/alpha_report.md`, which CI commits back to the repository:
+
+| Measure | Question it answers |
+| --- | --- |
+| **Excess return** (stock − SPY) | Did we beat the market on the names we picked? |
+| **Jensen's alpha** (stock − β×SPY) | Did we beat it *after adjusting for the risk taken*? The stricter test, and the honest one for a deliberately high-beta book. |
+| **Signal IC** | Does the composite score correlate with the realised return at all? |
+
+It also breaks results down by conviction — if VERY_HIGH does not beat MEDIUM,
+the conviction mechanism is decorative — and by engine, comparing the agent
+crew against the deterministic fallback.
+
+```bash
+python scripts/alpha_report.py                  # real trades
+python scripts/alpha_report.py --demo --include-demo   # preview the shape
+```
+
+**Read the caveat it prints.** Over a handful of trading days every one of
+these numbers is dominated by noise. It is a framework for judging the
+strategy, not yet a judgement of it.
+
 ## Testing
 
 ```bash
-pytest                      # 297 tests
+pytest                      # 370 tests
 pytest -m slow              # the live MCP server and the real-crew integration
 ```
 
@@ -712,7 +780,7 @@ I built this in a sandbox whose egress policy blocks every external host.
 
 ### Verified by actually running it
 
-- **297 tests pass** on Python 3.12.
+- **370 tests pass** on Python 3.12.
 - **Indicators against hand calculations.** RSI(3) = 78.333333 and ATR(3) =
   2.333333 on worked examples, matching to 1e-6.
 - **The MCP server started as a real subprocess** and all 10 tools called over

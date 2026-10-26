@@ -43,6 +43,9 @@ class OrderPlan:
     take_profit: Optional[float] = None
     sector: str = "unknown"
     high_beta: bool = False
+    volatility_scale: float = 1.0
+    natr_pct: float = float("nan")
+    beta: float = float("nan")
 
     def to_dict(self) -> dict:
         return {
@@ -59,6 +62,9 @@ class OrderPlan:
             "take_profit": round(self.take_profit, 2) if self.take_profit else None,
             "sector": self.sector,
             "high_beta": self.high_beta,
+            "volatility_scale": round(self.volatility_scale, 4),
+            "natr_pct": None if self.natr_pct != self.natr_pct else round(self.natr_pct, 4),
+            "beta": None if self.beta != self.beta else round(self.beta, 4),
         }
 
 
@@ -124,12 +130,52 @@ def atr_stop_and_target(
     return None, None
 
 
-def position_notional(
-    equity: float, conviction: str, risk: RiskConfig
+def volatility_scale(
+    natr_pct: float, beta: float, risk: RiskConfig
 ) -> float:
-    """Base position size, scaled by conviction, capped by the single-name cap."""
+    """How much to shrink (or grow) a position for how jumpy the stock is.
+
+    Equal-dollar sizing means a stock that swings 9% a day contributes about
+    four times the risk of one that swings 2%, so the wildest names quietly
+    dominate the portfolio. Dividing by volatility relative to a reference
+    equalises the RISK each position contributes instead of the dollars.
+
+    NATR is preferred because it is measured directly from the stock's own
+    range. Beta is the fallback when NATR is unavailable. Returns 1.0 when
+    neither is known, so a missing input never silently shrinks a position to
+    nothing.
+    """
+    if not risk.volatility_sizing:
+        return 1.0
+
+    reference = max(0.25, float(risk.reference_natr_pct))
+    scale = None
+    if natr_pct is not None and math.isfinite(natr_pct) and natr_pct > 0:
+        scale = reference / float(natr_pct)
+    elif beta is not None and math.isfinite(beta) and beta > 0:
+        # Beta is a volatility proxy relative to the market, so a beta of 1.0
+        # is "normal" in the same way the reference NATR is.
+        scale = 1.0 / float(beta)
+    if scale is None:
+        return 1.0
+    return max(risk.min_volatility_scale, min(risk.max_volatility_scale, scale))
+
+
+def position_notional(
+    equity: float,
+    conviction: str,
+    risk: RiskConfig,
+    natr_pct: float = float("nan"),
+    beta: float = float("nan"),
+) -> float:
+    """Base position size: equity x base% x conviction x volatility scale.
+
+    Still capped by the single-name limit, so the volatility scale can shrink
+    a position but never push it past the cap.
+    """
     multiplier = risk.conviction_multipliers.get(conviction.upper(), 0.0)
     notional = equity * risk.position_pct * multiplier
+    notional *= volatility_scale(natr_pct, beta, risk)
     return min(notional, equity * risk.max_position_pct)
 
 
@@ -146,6 +192,9 @@ def plan_orders(
     high_beta_symbols: Iterable[str] = (),
     atr_by_symbol: Optional[Mapping[str, float]] = None,
     price_by_symbol: Optional[Mapping[str, float]] = None,
+    natr_by_symbol: Optional[Mapping[str, float]] = None,
+    beta_by_symbol: Optional[Mapping[str, float]] = None,
+    stop_atr_by_symbol: Optional[Mapping[str, float]] = None,
     day: Optional[str] = None,
 ) -> PlanResult:
     """Turn signals into a concrete, risk-checked order list.
@@ -155,6 +204,11 @@ def plan_orders(
     """
     atr_by_symbol = dict(atr_by_symbol or {})
     price_by_symbol = dict(price_by_symbol or {})
+    natr_by_symbol = dict(natr_by_symbol or {})
+    beta_by_symbol = dict(beta_by_symbol or {})
+    # ATR used for the STOP may be the intraday one (tighter); the daily ATR
+    # is still used for the take-profit distance.
+    stop_atr_by_symbol = dict(stop_atr_by_symbol or atr_by_symbol)
     hb = {s.upper() for s in high_beta_symbols}
     result = PlanResult()
 
@@ -252,7 +306,10 @@ def plan_orders(
     for sig in buys:
         sym = sig.symbol.upper()
         price = price_for(sym, sig)
-        want = position_notional(equity, sig.conviction, risk)
+        natr = natr_by_symbol.get(sym, float("nan"))
+        beta = beta_by_symbol.get(sym, float("nan"))
+        scale = volatility_scale(natr, beta, risk)
+        want = position_notional(equity, sig.conviction, risk, natr, beta)
 
         if want <= 0:
             result.decisions.append(
@@ -311,7 +368,8 @@ def plan_orders(
             result.decisions.append(RiskDecision(sym, False, "quantity rounds to zero", want))
             continue
         notional = qty * price
-        stop, target = atr_stop_and_target(price, atr_by_symbol.get(sym, 0.0), risk, "buy")
+        stop, _ = atr_stop_and_target(price, stop_atr_by_symbol.get(sym, 0.0), risk, "buy")
+        _, target = atr_stop_and_target(price, atr_by_symbol.get(sym, 0.0), risk, "buy")
 
         order = OrderPlan(
             symbol=sym,
@@ -321,6 +379,7 @@ def plan_orders(
             price=price,
             reason=(
                 f"entry: composite {sig.composite:+.3f} ({sig.conviction})"
+                + (f"; volatility scale {scale:.2f}x" if abs(scale - 1.0) > 0.01 else "")
                 + (f"; resized by {', '.join(limits)}" if limits else "")
             ),
             conviction=sig.conviction,
@@ -330,6 +389,9 @@ def plan_orders(
             take_profit=target,
             sector=sec,
             high_beta=sym in hb,
+            volatility_scale=scale,
+            natr_pct=natr,
+            beta=beta,
         )
         result.orders.append(order)
         result.decisions.append(RiskDecision(sym, True, "entry approved", want, notional))

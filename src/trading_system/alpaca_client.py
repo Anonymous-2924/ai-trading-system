@@ -339,6 +339,67 @@ class AlpacaClient:
         )
         return raw if isinstance(raw, list) else []
 
+    def get_clock(self) -> dict:
+        """Alpaca's market clock: is_open, next_open, next_close.
+
+        Used instead of hard-coding UTC times, because the US close moves an
+        hour when the clocks change and a fixed cron is then wrong for half
+        the trading period.
+        """
+        if self.demo_mode:
+            return {"source": DEMO_SOURCE, "is_open": False,
+                    "next_open": "", "next_close": "", "timestamp": ""}
+        self._require_data_access("the market clock")
+        raw = self._request("GET", f"{self.base_url}/v2/clock")
+        return {
+            "source": "ALPACA_LIVE",
+            "is_open": bool(raw.get("is_open")),
+            "timestamp": clean(raw.get("timestamp")),
+            "next_open": clean(raw.get("next_open")),
+            "next_close": clean(raw.get("next_close")),
+        }
+
+    def get_calendar(self, start: str, end: str) -> List[dict]:
+        """Trading sessions between two dates, with their real open and close.
+
+        The US close moves an hour when the clocks change, so a fixed UTC cron
+        is wrong for half of any multi-week trading period. Asking Alpaca when
+        the session actually opens and closes is DST-proof by construction.
+        """
+        if self.demo_mode:
+            return []
+        self._require_data_access("the market calendar")
+        raw = self._request(
+            "GET", f"{self.base_url}/v2/calendar",
+            params={"start": clean(start), "end": clean(end)},
+        )
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "date": clean(d.get("date")),
+                "open": clean(d.get("open")),    # "09:30", US/Eastern
+                "close": clean(d.get("close")),  # "16:00", US/Eastern
+            }
+            for d in raw
+        ]
+
+    def get_intraday_bars(
+        self, symbols: Sequence[str], timeframe: str = "15Min", days: int = 12
+    ) -> Dict[str, pd.DataFrame]:
+        """Intraday bars for the opening range and relative volume.
+
+        Same batching rule as the daily fetch: every symbol in one request.
+        Returns {} rather than raising when intraday data is unavailable, so a
+        weekend or a feed gap leaves those features neutral instead of
+        failing the run.
+        """
+        try:
+            return self.get_bars(symbols, days=days, timeframe=timeframe)
+        except (AlpacaError, MarketDataUnavailable) as exc:
+            self.notes.append(f"intraday bars unavailable ({exc}); ORB and RVOL are neutral")
+            return {}
+
     def submit_order(
         self,
         symbol: str,
@@ -348,15 +409,44 @@ class AlpacaClient:
         order_type: str = "market",
         time_in_force: str = "day",
         limit_price: Optional[float] = None,
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
     ) -> dict:
-        """Submit a PAPER order.  Both guards run immediately before the POST."""
+        """Submit a PAPER order.  Both guards run immediately before the POST.
+
+        When BOTH ``stop_loss`` and ``take_profit`` are given, the order is
+        sent as a bracket: Alpaca then holds the stop and the target itself,
+        so the position is protected between our scheduled runs rather than
+        only at the next one.
+
+        Alpaca does not accept fractional quantities on bracket orders, so a
+        bracket entry is rounded DOWN to whole shares. Rounding down keeps us
+        inside the sizing limits rather than drifting over them.
+        """
         url = f"{self.base_url}/v2/orders"
         # GUARD 2: independent re-check of the URL actually about to be used.
         assert_paper_mode(url)
 
+        bracket = stop_loss is not None and take_profit is not None
+        quantity = float(qty)
+        if bracket:
+            # Fractional quantities are rejected on bracket orders.
+            quantity = float(int(quantity))
+            if quantity < 1:
+                return {
+                    "status": "too_small_for_bracket",
+                    "submitted": False,
+                    "note": (
+                        f"{qty:.4f} shares rounds below 1 whole share, and Alpaca "
+                        "does not accept fractional bracket orders. Skipped rather "
+                        "than sent unprotected."
+                    ),
+                    "symbol": clean(symbol).upper(),
+                }
+
         body = {
             "symbol": clean(symbol).upper(),
-            "qty": str(round(float(qty), 6)),
+            "qty": str(round(quantity, 6)),
             "side": clean(side).lower(),
             "type": clean(order_type).lower(),
             "time_in_force": clean(time_in_force).lower(),
@@ -364,6 +454,10 @@ class AlpacaClient:
         }
         if limit_price is not None:
             body["limit_price"] = str(round(float(limit_price), 2))
+        if bracket:
+            body["order_class"] = "bracket"
+            body["take_profit"] = {"limit_price": str(round(float(take_profit), 2))}
+            body["stop_loss"] = {"stop_price": str(round(float(stop_loss), 2))}
 
         if self.demo_mode:
             return {
@@ -398,6 +492,8 @@ class AlpacaClient:
             "id": raw.get("id"),
             "status": raw.get("status"),
             "filled_qty": raw.get("filled_qty"),
+            "filled_avg_price": raw.get("filled_avg_price"),
+            "bracket": bracket,
             **body,
         }
 

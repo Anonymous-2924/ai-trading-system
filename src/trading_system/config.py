@@ -152,6 +152,12 @@ class RiskConfig:
     min_cash_buffer_pct: float = 0.02
     min_order_notional: float = 50.0
     min_high_beta_pct: float = 0.30
+    volatility_sizing: bool = True
+    reference_natr_pct: float = 3.0
+    min_volatility_scale: float = 0.35
+    max_volatility_scale: float = 1.40
+    use_bracket_orders: bool = True
+    bracket_use_intraday_atr: bool = True
 
 
 @dataclass
@@ -378,6 +384,16 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
         min_cash_buffer_pct=float(r.get("min_cash_buffer_pct", 0.02)),
         min_order_notional=float(r.get("min_order_notional", 50.0)),
         min_high_beta_pct=float(r.get("min_high_beta_pct", 0.30)),
+        volatility_sizing=env_bool(
+            "VOLATILITY_SIZING", bool(r.get("volatility_sizing", True))
+        ),
+        reference_natr_pct=float(r.get("reference_natr_pct", 3.0)),
+        min_volatility_scale=float(r.get("min_volatility_scale", 0.35)),
+        max_volatility_scale=float(r.get("max_volatility_scale", 1.40)),
+        use_bracket_orders=env_bool(
+            "USE_BRACKET_ORDERS", bool(r.get("use_bracket_orders", True))
+        ),
+        bracket_use_intraday_atr=bool(r.get("bracket_use_intraday_atr", True)),
     )
 
     students = [

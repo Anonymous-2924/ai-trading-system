@@ -11,10 +11,10 @@ run:
   mode: analyse            # analyse | execute
   require_human_approval: true
   demo_mode: false
-  # Crew cost is ~2 requests per symbol + 4. With three students sharing one
-  # free-tier quota, 12 symbols each starved the students who ran later, so
-  # this is 8: ~20 requests per student, ~60 per run.
-  max_llm_symbols: 8
+  # Crew cost is ~2 requests per symbol + 4. The crew now runs TWICE a day,
+  # so at 8 symbols three students would need ~120 requests daily. At 6 it
+  # is ~16 per student, ~48 per run, ~96 per day.
+  max_llm_symbols: 6
   lookback_days: 400       # enough to seed EMA200 and 60-bar statistics
   model_run_dir: model-run
   log_dir: trading-logs
@@ -62,6 +62,29 @@ risk:
   # Refuse an order whose notional is below this (commission-free, but
   # fractional dust is noise).
   min_order_notional: 50.0
+  # VOLATILITY-ADJUSTED SIZING. Previously every position was the same
+  # percentage of equity whether it was PG or MARA, so the jumpy names
+  # dominated portfolio risk. Size is now divided by the stock's volatility
+  # relative to a reference, so each position contributes roughly equal RISK
+  # rather than equal dollars.
+  volatility_sizing: true
+  # The NATR (daily range as a percent of price) treated as "normal". A stock
+  # at this level is sized at 1.0x; one at twice this gets roughly half.
+  reference_natr_pct: 3.0
+  # Clamps, so a very calm name cannot be scaled up without limit and a very
+  # wild one is not scaled to nothing.
+  min_volatility_scale: 0.35
+  max_volatility_scale: 1.40
+
+  # BRACKET ORDERS. The ATR stop and target are attached to the entry at
+  # Alpaca, so they protect the position BETWEEN runs. Previously they were
+  # computed and logged but never sent, which meant an overnight gap had
+  # nothing standing in its way.
+  use_bracket_orders: true
+  # Prefer the intraday ATR for the stop when 15-minute bars are available:
+  # the daily ATR gives a very wide stop on a high-beta name.
+  bracket_use_intraday_atr: true
+
   # High-beta sleeve: fraction of the book that must sit in S&P High Beta
   # style names.  The brief requires at least 30%.
   min_high_beta_pct: 0.30
