@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from trading_system import alpha as alpha_lib  # noqa: E402
-from trading_system import daily_log, trade_ledger  # noqa: E402
+from trading_system import alpha_log, daily_log, trade_ledger  # noqa: E402
 from trading_system.alpaca_client import (  # noqa: E402
     AlpacaError,
     MarketDataUnavailable,
@@ -612,6 +612,127 @@ def alpha_section(positions: List[alpha_lib.Position], heading="Alpha attributio
         )
 
 
+def alpha_history_section(student_id: str, student_name: str):
+    """Every alpha reading recorded for this member, oldest run to newest.
+
+    ``alpha_section`` above answers "where does the attribution stand right
+    now". This answers "how has it moved", which is the one that shows
+    whether a good number is a trend or a single lucky trade.
+    """
+    st.markdown(f"### Alpha history — {student_name}")
+    rows = alpha_log.read_rows(student_id, cfg.log_dir)
+    if not rows:
+        st.info(
+            "No alpha readings recorded yet. One is appended after every run "
+            "to `trading-logs/alpha_"
+            + student_id
+            + ".csv`; readings for runs made before the log existed come from "
+            "`scripts/backfill_ledger.py`."
+        )
+        return
+
+    frame = pd.DataFrame(rows)
+    for column in (
+        "mean_return_pct", "mean_excess_pct", "mean_jensen_pct",
+        "total_pnl", "win_rate_pct", "ic_return", "trades", "open_trades",
+    ):
+        if column in frame:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame["when"] = pd.to_datetime(frame["timestamp_utc"], errors="coerce", utc=True)
+    frame = frame.sort_values("when")
+
+    latest = frame.iloc[-1]
+    first = frame.iloc[0]
+    moved = float(latest["mean_excess_pct"]) - float(first["mean_excess_pct"])
+
+    columns = st.columns(4)
+    columns[0].markdown(
+        card("Readings", f"{len(frame)}", "one per run", "flat"),
+        unsafe_allow_html=True)
+    columns[1].markdown(
+        card("Latest excess", pct(float(latest["mean_excess_pct"])),
+             str(latest.get("run_label") or "run"),
+             tone(float(latest["mean_excess_pct"]))), unsafe_allow_html=True)
+    columns[2].markdown(
+        card("Latest Jensen", pct(float(latest["mean_jensen_pct"])),
+             "risk-adjusted", tone(float(latest["mean_jensen_pct"]))),
+        unsafe_allow_html=True)
+    columns[3].markdown(
+        card("Moved since first", pct(moved) if math.isfinite(moved) else "—",
+             "excess, first to latest", tone(moved)), unsafe_allow_html=True)
+
+    plot = frame.dropna(subset=["when"])
+    series = plot.melt(
+        id_vars=["when", "run_label"],
+        value_vars=[c for c in ("mean_excess_pct", "mean_jensen_pct", "mean_return_pct")
+                    if c in plot],
+        var_name="measure", value_name="value",
+    ).dropna(subset=["value"])
+    labels = {
+        "mean_excess_pct": "Excess vs SPY",
+        "mean_jensen_pct": "Jensen's alpha",
+        "mean_return_pct": "Raw return",
+    }
+    series["measure"] = series["measure"].map(labels)
+
+    if not series.empty:
+        zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+            color=MUTED, strokeDash=[4, 4], opacity=0.7).encode(y="y:Q")
+        line = (
+            alt.Chart(series)
+            .mark_line(point=alt.OverlayMarkDef(size=55, filled=True), strokeWidth=2.4)
+            .encode(
+                x=alt.X("when:T", title=None),
+                y=alt.Y("value:Q", title="percent"),
+                color=alt.Color(
+                    "measure:N", title=None,
+                    scale=alt.Scale(
+                        domain=["Excess vs SPY", "Jensen's alpha", "Raw return"],
+                        range=[CYAN, MAGENTA, VIOLET]),
+                ),
+                tooltip=[
+                    alt.Tooltip("when:T", title="run"),
+                    alt.Tooltip("run_label:N", title="which"),
+                    alt.Tooltip("measure:N", title="measure"),
+                    alt.Tooltip("value:Q", title="percent", format="+.2f"),
+                ],
+            )
+        )
+        st.altair_chart(
+            (zero + line).properties(height=300), use_container_width=True
+        )
+
+    if (frame["ic_return"].notna()).any():
+        st.caption(
+            "IC is blank for backfilled trades: the composite score at entry "
+            "was never recorded for them, so there is nothing to correlate "
+            "the return against. It is not a zero."
+        )
+
+    table = pd.DataFrame({
+        "Date": frame["date"],
+        "UTC": frame["timestamp_utc"].str.slice(11, 16),
+        "Run": frame["run_label"],
+        "Trades": frame["trades"],
+        "Open": frame["open_trades"],
+        "Return": frame["mean_return_pct"].map(pct),
+        "Excess": frame["mean_excess_pct"].map(pct),
+        "Jensen": frame["mean_jensen_pct"].map(pct),
+        "Win rate": frame["win_rate_pct"].map(lambda v: pct(v).replace("+", "")),
+        "IC": frame["ic_return"].map(
+            lambda v: f"{v:+.3f}" if pd.notna(v) and math.isfinite(v) else "—"),
+        "P&L": frame["total_pnl"].map(money),
+        "Data": frame["data_source"],
+    })
+    st.dataframe(table.iloc[::-1], use_container_width=True, hide_index=True)
+
+    notes = [n for n in frame.get("note", pd.Series(dtype=str)).fillna("") if str(n).strip()]
+    if notes:
+        with st.expander("Notes recorded with these readings"):
+            for note in dict.fromkeys(notes[-10:]):
+                st.markdown(f"- {note}")
+
+
 def orders_section(student_id: str, student_name: str):
     st.markdown("### Orders")
     frame = ledger_frames[student_id]
@@ -763,10 +884,6 @@ with tabs[0]:
     trajectory_chart(traded_symbols)
 
     rule()
-    group_positions = [p for positions in all_positions.values() for p in positions]
-    alpha_section(group_positions, "Alpha attribution — whole group")
-
-    rule()
     st.markdown("### Combined daily profit and loss")
     combined_daily = pd.concat(
         [f for f in daily_frames.values() if not f.empty], ignore_index=True
@@ -866,6 +983,9 @@ for index, student in enumerate(cfg.students, start=1):
 
         rule()
         alpha_section(all_positions[student.id], f"Alpha attribution — {student.name}")
+
+        rule()
+        alpha_history_section(student.id, student.name)
 
         rule()
         orders_section(student.id, student.name)

@@ -352,6 +352,11 @@ jobs:
     name: Commit the daily logs
     needs: analyse
     if: always() && github.event_name != 'pull_request'
+    # Shared with the backfill workflow, so the two can never write
+    # trading-logs/ at the same time and lose each other's rows.
+    concurrency:
+      group: trading-logs-write
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -385,15 +390,26 @@ jobs:
             done
           done
           # Rebuild the Markdown mirrors from the merged CSVs.
+          #
+          # Three KINDS of CSV live in this directory and each has its own
+          # renderer. Handing an alpha or ledger file to the daily-log
+          # renderer does not fail -- it writes a daily log full of "n/a"
+          # over the real one -- so dispatch on the prefix, never on a glob.
           python - <<'PY'
           import pathlib
           import sys
 
           sys.path.insert(0, "src")
-          from trading_system.daily_log import write_markdown
+          from trading_system import alpha_log, daily_log
 
           for csv in sorted(pathlib.Path("trading-logs").glob("*.csv")):
-              print("rebuilt", write_markdown(csv.stem, "trading-logs"))
+              name = csv.stem
+              if name.startswith("alpha_"):
+                  print("rebuilt", alpha_log.write_markdown(name[len("alpha_"):], "trading-logs"))
+              elif name.startswith("trades_"):
+                  pass  # the ledger is raw data; the alpha log is its summary
+              else:
+                  print("rebuilt", daily_log.write_markdown(name, "trading-logs"))
           PY
           ls -la trading-logs/ || true
 

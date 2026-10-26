@@ -205,3 +205,116 @@ class TestRuleEngine:
         bars = {f"S{i}": frame_factory(300, seed=i) for i in range(6)}
         result = run_rule_engine(list(bars), bars)
         assert sum(result.counts.values()) == len(result.signals)
+
+
+class TestAlphaIsRecordedEveryRun:
+    """The alpha log must grow on every run, not only at the end of the
+    project, and a problem measuring it must never take the run down."""
+
+    def _bars(self):
+        import pandas as pd
+        index = pd.to_datetime(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"])
+
+        def frame(closes):
+            return pd.DataFrame(
+                {"open": closes, "high": closes, "low": closes, "close": closes,
+                 "volume": [1e6] * 4},
+                index=index,
+            )
+
+        return ({"NVDA": frame([100.0, 105.0, 112.0, 115.0])},
+                {"SPY": frame([500.0, 502.0, 505.0, 508.0])})
+
+    def _ledger(self, log_dir):
+        from trading_system import trade_ledger
+        trade_ledger.append_rows(
+            [
+                {"timestamp_utc": "2026-10-20T14:05:00+00:00", "date": "2026-10-20",
+                 "student_id": "student_1", "symbol": "NVDA", "side": "buy",
+                 "qty": "10", "price": "100", "notional": "1000",
+                 "composite": "0.55", "conviction": "HIGH", "beta": "1.7",
+                 "engine": "crewai_agents", "submitted": "True"},
+            ],
+            log_dir,
+        )
+
+    def test_a_row_is_appended_after_a_run(self, tmp_path):
+        from trading_system import alpha_log, pipeline
+        from trading_system.config import load_config
+
+        log_dir = str(tmp_path)
+        self._ledger(log_dir)
+        bars, benchmarks = self._bars()
+
+        cfg = load_config("config/config.yaml")
+        cfg.log_dir = log_dir
+        result = pipeline.RunResult(student_id="student_1")
+        result.data_source = "ALPACA_LIVE"
+
+        pipeline._record_alpha(cfg, cfg.students[0], result, bars, benchmarks, "morning")
+
+        rows = alpha_log.read_rows("student_1", log_dir)
+        assert len(rows) == 1
+        assert rows[0]["run_label"] == "morning"
+        # NVDA 100 -> 115 is +15%; SPY 500 -> 508 is +1.6%
+        assert float(rows[0]["mean_return_pct"]) == pytest.approx(15.0, abs=0.01)
+        assert float(rows[0]["mean_excess_pct"]) == pytest.approx(13.4, abs=0.01)
+        # Jensen = 15 - 1.7 * 1.6
+        assert float(rows[0]["mean_jensen_pct"]) == pytest.approx(12.28, abs=0.01)
+        assert not result.errors
+
+    def test_two_runs_leave_two_readings(self, tmp_path):
+        from trading_system import alpha_log, pipeline
+        from trading_system.config import load_config
+
+        log_dir = str(tmp_path)
+        self._ledger(log_dir)
+        bars, benchmarks = self._bars()
+        cfg = load_config("config/config.yaml")
+        cfg.log_dir = log_dir
+        for label in ("morning", "afternoon"):
+            result = pipeline.RunResult(student_id="student_1")
+            pipeline._record_alpha(cfg, cfg.students[0], result, bars, benchmarks, label)
+        labels = [r["run_label"] for r in alpha_log.read_rows("student_1", log_dir)]
+        assert labels == ["morning", "afternoon"]
+
+    def test_no_trades_means_no_reading(self, tmp_path):
+        from trading_system import alpha_log, pipeline
+        from trading_system.config import load_config
+
+        cfg = load_config("config/config.yaml")
+        cfg.log_dir = str(tmp_path)
+        result = pipeline.RunResult(student_id="student_1")
+        bars, benchmarks = self._bars()
+        pipeline._record_alpha(cfg, cfg.students[0], result, bars, benchmarks, "morning")
+        assert alpha_log.read_rows("student_1", str(tmp_path)) == []
+
+    def test_a_missing_benchmark_is_recorded_as_a_note_not_a_zero(self, tmp_path):
+        from trading_system import alpha_log, pipeline
+        from trading_system.config import load_config
+
+        log_dir = str(tmp_path)
+        self._ledger(log_dir)
+        bars, _ = self._bars()
+        cfg = load_config("config/config.yaml")
+        cfg.log_dir = log_dir
+        result = pipeline.RunResult(student_id="student_1")
+        pipeline._record_alpha(cfg, cfg.students[0], result, bars, {}, "morning")
+        row = alpha_log.read_rows("student_1", log_dir)[0]
+        assert row["mean_excess_pct"] == ""      # unmeasurable, not 0
+        assert "no benchmark" in row["note"]
+
+    def test_a_logging_failure_never_breaks_the_run(self, tmp_path):
+        """The whole point of the guard: a measurement problem is reported on
+        the result, never raised into the trading path."""
+        from trading_system import pipeline
+        from trading_system.config import load_config
+
+        blocker = tmp_path / "blocked"
+        blocker.write_text("I am a file, not a directory")
+        cfg = load_config("config/config.yaml")
+        cfg.log_dir = str(blocker)
+        result = pipeline.RunResult(student_id="student_1")
+        bars, benchmarks = self._bars()
+        pipeline._record_alpha(cfg, cfg.students[0], result, bars, benchmarks, "morning")
+        assert result.errors == [] or any("alpha" in e for e in result.errors)

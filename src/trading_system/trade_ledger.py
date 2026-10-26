@@ -193,3 +193,43 @@ def read_fills(student_id: str, log_dir: str = "trading-logs") -> List[Dict[str,
     except Exception:
         log.exception("failed to read %s", path)
         return []
+
+
+def append_rows(rows, log_dir: str = "trading-logs") -> Dict[str, object]:
+    """Append plain dicts, for rows reconstructed rather than observed.
+
+    ``append_fills`` takes ``Fill`` objects built from an order we just sent.
+    The backfill has no such object -- it has an Alpaca order and large gaps
+    where the signal used to be -- so it writes dicts straight through.
+    Unknown keys are dropped and missing ones left empty, so a row can never
+    silently shift the columns of an existing file.  Never raises.
+    """
+    status: Dict[str, object] = {"ok": False, "written": 0, "paths": [], "error": ""}
+    try:
+        rows = list(rows)
+        if not rows:
+            status["ok"] = True
+            return status
+        directory = Path(log_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        by_student: Dict[str, List[dict]] = {}
+        for row in rows:
+            by_student.setdefault(str(row.get("student_id", "")), []).append(row)
+
+        for student_id, student_rows in by_student.items():
+            path = directory / f"trades_{student_id}.csv"
+            is_new = not path.exists() or path.stat().st_size == 0
+            with path.open("a", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=COLUMNS)
+                if is_new:
+                    writer.writeheader()
+                for row in student_rows:
+                    writer.writerow({key: str(row.get(key, "")) for key in COLUMNS})
+            status["paths"].append(path.as_posix())
+            status["written"] = int(status["written"]) + len(student_rows)
+        status["ok"] = True
+    except Exception as exc:  # a ledger failure must not break a trading run
+        log.exception("failed to append reconstructed ledger rows")
+        status["error"] = f"{type(exc).__name__}: {exc}"
+    return status

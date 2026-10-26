@@ -273,9 +273,19 @@ It also breaks the results down by conviction level. If our VERY_HIGH conviction
 
 We want to be clear that over a handful of trading days all of these numbers are dominated by noise. This is a framework for judging the strategy rather than a judgement of it, and the report says so in its own output.
 
+A single alpha figure at the end of the project would also be misleading, because it could not tell us whether a good number was a genuine trend or one lucky trade. So after every run the system appends one row per member to a personal alpha log, recording all three measures as they stood at that moment. Each of us has our own file, committed to the repository alongside the daily log, and the measures can therefore be watched moving rather than read once at the end.
+
+We deliberately did not produce a combined alpha figure for the group. Alpha is a per-portfolio measure, and averaging three different sets of holdings would hide exactly the differences between us that the analysis exists to reveal.
+
+One honest limitation is worth recording. The trade ledger was added part-way through the project, so the trades made in the first week were not captured with the score that caused them. We wrote a recovery script that reads our order history back from Alpaca and rebuilds those rows, which restores enough to compute the return, the excess return and Jensen's alpha for every trade we have ever made. Beta is not stored by Alpaca either, but unlike the rest it can be measured from price history rather than guessed, so the script computes it the same way the live system does.
+
+The composite score, however, is genuinely gone for those early trades: it existed only in the run's working files, which are not kept permanently. This means the information coefficient cannot be calculated for the recovered trades. We considered estimating a score for them and decided against it, because the information coefficient is precisely the correlation between that score and the outcome — inventing the score would have corrupted the one statistic the ledger exists to produce. Those rows are marked as recovered, their score field is left empty rather than filled with a zero, and the alpha log states the limitation in its own notes.
+
 ### 5.10 Dashboard
 
-We also built a Streamlit dashboard for manual use. It allows entering Alpaca keys (held only for the browser session, never written to disk), selecting stocks and indicator categories, adjusting the aggression and scoring thresholds, starting a run, reviewing the recommendations with the full breakdown of why each decision was made, approving individual trades before anything is sent, and viewing positions, profit and loss, and the daily logs with an equity chart.
+We also built a Streamlit dashboard, which presents the results in a dark, neon-lit terminal style. It is deliberately **read-only**: it has no order entry, no execute mode and no ability to place a trade. All trading happens in the automated GitHub Actions pipeline, and the dashboard's only job is to show what that pipeline did. Alpaca keys may be entered to price open positions and draw live price charts, and are held for the browser session only, never written to disk.
+
+It has four tabs. The first shows the group: all three accounts side by side, combined equity, the trajectory of every stock we hold, and combined daily profit and loss with a running total. The remaining three — one each for Shivika, Kanika and Sharvi — show that member's equity trajectory, their daily profit and loss with their best and worst days, the price trajectory of their own stocks, their current alpha attribution, their alpha history across every run that has taken place, their complete order ledger, and their full run history.
 
 ## 6. Results So Far
 
@@ -340,7 +350,7 @@ We verified the fix by simulating a crew that hangs indefinitely and confirming 
 
 ## 8. Testing
 
-We have 370 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
+We have 428 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, the per-member alpha log and the recovery of earlier trades, and the full pipeline from end to end.
 
 Beyond the unit tests we also:
 

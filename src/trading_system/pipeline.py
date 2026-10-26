@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from . import daily_log, trade_ledger
+from . import alpha as alpha_lib
+from . import alpha_log, daily_log, trade_ledger
 from .agents import CrewRunResult, run_crew
 from .alpaca_client import AlpacaClient, AlpacaError, MarketDataUnavailable, build_client
 from .config import AppConfig, StudentConfig
@@ -443,8 +444,78 @@ def run_for_student(
         errors=(result.errors + result.fallbacks) or None,
     )
 
+    _record_alpha(cfg, student, result, bars, benchmarks, run_label)
     _finalise(cfg, student, result, client, rl, account)
     return result
+
+
+def _record_alpha(
+    cfg: AppConfig,
+    student: StudentConfig,
+    result: RunResult,
+    bars: Dict[str, Any],
+    benchmarks: Dict[str, Any],
+    run_label: str,
+) -> None:
+    """Measure the trades made so far and append a row to the alpha log.
+
+    Runs AFTER the ledger is written, so this run's own orders are included.
+    Like the other logs, a failure here is reported and never raised: a
+    measurement problem must not take a trading run down with it.
+    """
+    try:
+        rows = trade_ledger.read_fills(student.id, cfg.log_dir)
+        if not rows:
+            return
+
+        positions = alpha_lib.build_positions(rows)
+        if not positions:
+            return
+
+        closes = {
+            symbol: float(frame["close"].iloc[-1])
+            for symbol, frame in bars.items()
+            if frame is not None and len(frame)
+        }
+        alpha_lib.mark_open_positions(positions, closes)
+        benchmark_bars = (benchmarks or {}).get(alpha_lib.BENCHMARK)
+        alpha_lib.attribute(positions, benchmark_bars)
+
+        summary = alpha_lib.summarise(positions)
+        note = ""
+        if benchmark_bars is None:
+            note = (
+                "no benchmark data this run, so excess return and Jensen's alpha "
+                "could not be measured"
+            )
+        unpriced = [p.symbol for p in positions if p.still_open and p.symbol not in closes]
+        if unpriced:
+            note = (note + "; " if note else "") + (
+                f"no current price for {', '.join(sorted(set(unpriced))[:5])}"
+            )
+
+        status = alpha_log.append_row(
+            alpha_log.build_row(
+                student_id=student.id,
+                summary=summary,
+                run_label=run_label,
+                data_source=result.data_source,
+                note=note,
+            ),
+            cfg.log_dir,
+        )
+        if status.get("ok"):
+            result.notes.append(
+                f"alpha logged: {summary.trades} trade(s), mean excess "
+                f"{summary.mean_excess:+.2f}%"
+                if summary.mean_excess == summary.mean_excess
+                else f"alpha logged: {summary.trades} trade(s)"
+            )
+        else:
+            result.errors.append(f"alpha log failed: {status.get('error')}")
+    except Exception as exc:  # never break a run over a measurement
+        log.exception("alpha logging failed for %s", student.id)
+        result.errors.append(f"alpha log failed: {type(exc).__name__}: {exc}")
 
 
 def _finalise(

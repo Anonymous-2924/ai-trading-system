@@ -80,10 +80,11 @@ pytest
 | `python scripts/test_llm.py --list-models` | List the models **your** account can see |
 | `python scripts/run_mcp_server.py` | Run the MCP server on stdio |
 | `python scripts/alpha_report.py` | Attribute performance: excess return, Jensen's alpha, signal IC |
+| `python scripts/backfill_ledger.py --dry-run` | Recover trades made before the ledger existed, from Alpaca order history |
 | `python scripts/await_market_window.py --window open` | Wait for the right point in the session |
 | `python scripts/check_alpaca.py` | Show which Alpaca account each key pair belongs to |
 | `streamlit run dashboard/app.py` | The control panel |
-| `pytest` | 370 tests |
+| `pytest` | 428 tests |
 
 ---
 
@@ -641,7 +642,7 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 
-- `pytest` (370 tests) on Python **3.11 and 3.12**, on every push and PR.
+- `pytest` (428 tests) on Python **3.11 and 3.12**, on every push and PR.
 - Runs the **demo pipeline end to end** and asserts the agent artefacts and
   all six log files were produced, and that no demo artefact claims live data.
 - Starts the **MCP server** and asserts every tool is strict-mode safe.
@@ -676,8 +677,8 @@ GitHub Actions pipeline, and this shows what the pipeline did. Four tabs:
 
 | Tab | Shows |
 | --- | --- |
-| **Group** | All three members side by side, group equity/P&L/return, a combined equity trajectory, every traded stock rebased to 100, whole-group alpha attribution, and combined daily P&L with the running total. |
-| **Shivika / Kanika / Sharvi** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, the full order ledger, and the complete run history. |
+| **Group** | All three members side by side, group equity/P&L/return, a combined equity trajectory, every traded stock rebased to 100, and combined daily P&L with the running total. No alpha section: alpha is per member. |
+| **Shivika / Kanika / Sharvi** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, **their alpha history across every run**, the full order ledger, and the complete run history. |
 
 Data comes from the committed CSV logs in `trading-logs/`, so the history is
 always in sync with what the pipeline pushed. Alpha is recomputed from the
@@ -739,10 +740,67 @@ python scripts/alpha_report.py --demo --include-demo   # preview the shape
 these numbers is dominated by noise. It is a framework for judging the
 strategy, not yet a judgement of it.
 
+### Per-member alpha history
+
+A single alpha number at the end of the project cannot tell you whether it
+was a trend or one lucky trade. So every run also appends one row per member
+to `trading-logs/alpha_<student>.csv`, with `alpha_<student>.md` rendered
+beside it as a GitHub table:
+
+| | |
+| --- | --- |
+| **Written** | After every run — both daily runs, plus the end-of-day snapshot |
+| **By** | `pipeline._record_alpha`, straight after the ledger is written, so the run's own orders are counted |
+| **Holds** | Trades measured, open vs closed, mean return, excess, Jensen's alpha, win rate, IC, total P&L, benchmark, data source |
+| **Committed** | By the `commit-logs` job, exactly like the daily logs |
+| **Shown** | In the dashboard, on each member's own tab — Shivika, Kanika, Sharvi — as cards, a line chart of the three measures over time, and the full table |
+
+There is deliberately **no group alpha section**: alpha is a per-member
+measure, and averaging three different books hides exactly the differences
+the report exists to show.
+
+As with every other log, a failure to measure is reported on the run result
+and never raised — a measurement problem must not take a trading run down.
+
+### Recovering alpha for earlier runs
+
+The trade ledger only started recording on 2026-10-25. Trades made before
+that are still on record at Alpaca, so they can be recovered:
+
+**On GitHub:** Actions → *Backfill alpha from Alpaca* → Run workflow. Leave
+*dry run* ticked first to see what it would recover; run it again unticked to
+write and commit the rows.
+
+**Locally:**
+
+```bash
+python scripts/backfill_ledger.py --dry-run        # show, write nothing
+python scripts/backfill_ledger.py                  # write the rows
+python scripts/backfill_ledger.py --students student_1,student_3
+```
+
+It is safe to run repeatedly: an order already in the ledger is skipped by
+its Alpaca order id.
+
+**What comes back, and what does not.** Alpaca knows symbol, side, quantity,
+average fill price and time — everything the return, the excess return and
+Jensen's alpha need. Beta was never recorded either, but unlike the rest it
+can be *measured* rather than guessed: 60-day rolling beta against SPY as of
+the entry date, computed exactly as the live path computes it.
+
+The composite score and conviction are gone. They lived only in that run's
+`model-run/` artefact, which is gitignored and expires after 30 days. So:
+
+> **The information coefficient cannot be computed for backfilled trades.**
+> There is no score to correlate the return against. Those rows leave
+> `composite` empty and are marked `engine=backfilled_from_alpaca`, and the
+> alpha log carries the caveat in its note. An invented score would corrupt
+> the one statistic the ledger exists to produce, so none is invented.
+
 ## Testing
 
 ```bash
-pytest                      # 370 tests
+pytest                      # 428 tests
 pytest -m slow              # the live MCP server and the real-crew integration
 ```
 
@@ -787,7 +845,7 @@ I built this in a sandbox whose egress policy blocks every external host.
 
 ### Verified by actually running it
 
-- **370 tests pass** on Python 3.12.
+- **428 tests pass** on Python 3.12.
 - **Indicators against hand calculations.** RSI(3) = 78.333333 and ATR(3) =
   2.333333 on worked examples, matching to 1e-6.
 - **The MCP server started as a real subprocess** and all 10 tools called over

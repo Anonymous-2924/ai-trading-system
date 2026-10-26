@@ -1,0 +1,127 @@
+# Rebuild the trade ledger and the alpha log for runs made before those logs
+# existed, by reading each member's order history back from Alpaca.
+#
+# Run it by hand: Actions -> "Backfill alpha from Alpaca" -> Run workflow.
+# It is safe to run more than once: an order already in the ledger is skipped
+# by its Alpaca order id, so nothing is ever duplicated.
+#
+# Start with dry run = true to see what it would recover, then run it again
+# with dry run = false to write and commit the rows.
+name: Backfill alpha from Alpaca
+
+on:
+  workflow_dispatch:
+    inputs:
+      students:
+        description: 'Which members (all, or e.g. student_1,student_3)'
+        required: false
+        default: 'all'
+      dry_run:
+        description: 'Dry run: show what would be written, change nothing'
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  # Never let two backfills write the logs at the same time, and never let one
+  # run while the daily trading job is committing.
+  group: trading-logs-write
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    name: Recover past trades and recompute alpha
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip >/dev/null
+          pip install --ignore-installed PyYAML -r requirements.txt
+
+      - name: Mask the credentials before anything can print them
+        env:
+          K1: ${{ secrets.ALPACA_API_KEY_1 }}
+          S1: ${{ secrets.ALPACA_SECRET_KEY_1 }}
+          K2: ${{ secrets.ALPACA_API_KEY_2 }}
+          S2: ${{ secrets.ALPACA_SECRET_KEY_2 }}
+          K3: ${{ secrets.ALPACA_API_KEY_3 }}
+          S3: ${{ secrets.ALPACA_SECRET_KEY_3 }}
+        run: |
+          for name in K1 S1 K2 S2 K3 S3; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              echo "${name}=${value}" >> "$GITHUB_ENV"
+            fi
+          done
+
+      - name: Backfill
+        env:
+          ALPACA_API_KEY_1: ${{ env.K1 }}
+          ALPACA_SECRET_KEY_1: ${{ env.S1 }}
+          ALPACA_API_KEY_2: ${{ env.K2 }}
+          ALPACA_SECRET_KEY_2: ${{ env.S2 }}
+          ALPACA_API_KEY_3: ${{ env.K3 }}
+          ALPACA_SECRET_KEY_3: ${{ env.S3 }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          DEMO_MODE: 'false'
+          # Through the environment, never interpolated into the command: a
+          # dispatch input is text someone typed, and `${{ ... }}` inside a
+          # run block is pasted into the shell before bash ever sees it.
+          STUDENTS: ${{ inputs.students }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -o pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            python scripts/backfill_ledger.py --students "$STUDENTS" --dry-run 2>&1 | tee backfill.log
+          else
+            python scripts/backfill_ledger.py --students "$STUDENTS" 2>&1 | tee backfill.log
+          fi
+
+      - name: Put the result in the run summary
+        if: always()
+        env:
+          STUDENTS: ${{ inputs.students }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## Alpha backfill"
+            echo
+            printf 'Members: `%s` — dry run: `%s`\n' "$STUDENTS" "$DRY_RUN"
+            echo
+            echo '```'
+            cat backfill.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the recovered logs
+        if: inputs.dry_run != true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add trading-logs/
+          if git diff --cached --quiet; then
+            echo "Nothing recovered, so nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(logs): backfill alpha from Alpaca order history [skip ci]"
+          for attempt in 1 2 3 4; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+              git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error title=Could not push::The backfill ran but the logs were not committed."
+          exit 1

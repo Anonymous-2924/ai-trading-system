@@ -200,3 +200,87 @@ class TestRetries:
         with pytest.raises(AlpacaError, match="403"):
             client.get_bars(["AAA"], days=30)
         assert len(session.calls) == 1
+
+
+class TestOrderHistoryPaging:
+    """The backfill needs EVERY past order, but /v2/orders returns at most a
+    page at a time, so it has to page backwards with `until`."""
+
+    def client(self, orders, page_size_seen):
+        from trading_system.alpaca_client import AlpacaClient
+
+        c = AlpacaClient(
+            api_key="k", secret_key="s",
+            base_url="https://paper-api.alpaca.markets",
+            data_url="https://data.alpaca.markets",
+        )
+
+        def fake_request(method, url, **kwargs):
+            params = kwargs.get("params", {})
+            page_size_seen.append(int(params["limit"]))
+            rows = sorted(orders, key=lambda o: o["submitted_at"], reverse=True)
+            if params.get("until"):
+                rows = [o for o in rows if o["submitted_at"] < params["until"]]
+            return rows[: int(params["limit"])]
+
+        c._request = fake_request
+        return c
+
+    def orders(self, count):
+        return [
+            {"id": f"ord-{n}", "symbol": "NVDA", "side": "buy",
+             "submitted_at": f"2026-10-{20 + n // 24:02d}T{n % 24:02d}:00:00Z"}
+            for n in range(count)
+        ]
+
+    def test_it_pages_until_everything_is_collected(self):
+        seen = []
+        orders = self.orders(10)
+        got = self.client(orders, seen).get_order_history(page_size=3)
+        assert len(got) == 10
+        assert {o["id"] for o in got} == {o["id"] for o in orders}
+        assert len(seen) > 1, "one page means it never paged"
+
+    def test_the_result_is_oldest_first(self):
+        got = self.client(self.orders(10), []).get_order_history(page_size=3)
+        stamps = [o["submitted_at"] for o in got]
+        assert stamps == sorted(stamps)
+
+    def test_a_single_short_page_stops_immediately(self):
+        seen = []
+        got = self.client(self.orders(2), seen).get_order_history(page_size=500)
+        assert len(got) == 2 and len(seen) == 1
+
+    def test_no_orders_is_not_an_error(self):
+        assert self.client([], []).get_order_history() == []
+
+    def test_a_stuck_cursor_cannot_loop_forever(self):
+        """Two orders sharing a timestamp would otherwise page endlessly,
+        because `until` can never move past them."""
+        from trading_system.alpaca_client import AlpacaClient
+
+        same = [
+            {"id": f"ord-{n}", "symbol": "NVDA", "submitted_at": "2026-10-20T14:00:00Z"}
+            for n in range(5)
+        ]
+        c = AlpacaClient(api_key="k", secret_key="s",
+                         base_url="https://paper-api.alpaca.markets",
+                         data_url="https://data.alpaca.markets")
+        calls = []
+
+        def fake_request(method, url, **kwargs):
+            calls.append(1)
+            assert len(calls) < 50, "it paged forever"
+            return same[:2]
+
+        c._request = fake_request
+        got = c.get_order_history(page_size=2)
+        assert len(got) == 2
+
+    def test_demo_mode_reads_nothing(self):
+        from trading_system.alpaca_client import AlpacaClient
+
+        c = AlpacaClient(api_key="", secret_key="",
+                         base_url="https://paper-api.alpaca.markets",
+                         data_url="https://data.alpaca.markets", demo_mode=True)
+        assert c.get_order_history() == []

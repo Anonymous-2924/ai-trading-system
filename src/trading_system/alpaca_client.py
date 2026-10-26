@@ -328,16 +328,56 @@ class AlpacaClient:
             )
         return out
 
-    def get_orders(self, status: str = "all", limit: int = 100) -> List[dict]:
+    def get_orders(
+        self, status: str = "all", limit: int = 100, until: Optional[str] = None
+    ) -> List[dict]:
         if self.demo_mode:
             return []
         self._require_data_access("orders")
-        raw = self._request(
-            "GET",
-            f"{self.base_url}/v2/orders",
-            params={"status": status, "limit": int(limit), "direction": "desc"},
-        )
+        params: Dict[str, object] = {
+            "status": status,
+            "limit": int(limit),
+            "direction": "desc",
+        }
+        if until:
+            params["until"] = until
+        raw = self._request("GET", f"{self.base_url}/v2/orders", params=params)
         return raw if isinstance(raw, list) else []
+
+    def get_order_history(
+        self, status: str = "closed", max_orders: int = 2000, page_size: int = 500
+    ) -> List[dict]:
+        """Every order back to the beginning, oldest first.
+
+        ``/v2/orders`` returns at most 500 at a time, so page backwards using
+        ``until`` set just before the oldest ``submitted_at`` seen so far.
+        Stops when a page comes back empty, short, or brings nothing new --
+        the last of those matters, because an order submitted in the same
+        microsecond as the cursor would otherwise page forever.
+        """
+        page_size = max(1, int(page_size))
+        collected: Dict[str, dict] = {}
+        until: Optional[str] = None
+        while len(collected) < max_orders:
+            page = self.get_orders(status=status, limit=page_size, until=until)
+            if not page:
+                break
+            before = len(collected)
+            for order in page:
+                oid = str(order.get("id") or order.get("client_order_id") or "")
+                if oid:
+                    collected[oid] = order
+            if len(collected) == before:
+                break  # nothing new: the cursor is stuck
+            stamps = sorted(
+                str(o.get("submitted_at") or "") for o in page if o.get("submitted_at")
+            )
+            if not stamps:
+                break
+            until = stamps[0]
+            if len(page) < page_size:
+                break
+        return sorted(collected.values(), key=lambda o: str(o.get("submitted_at") or ""))
 
     def get_clock(self) -> dict:
         """Alpaca's market clock: is_open, next_open, next_close.

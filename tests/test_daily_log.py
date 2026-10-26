@@ -1,9 +1,11 @@
 """Per-member daily logs: every required column, the gap row, and the mirror."""
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
+from trading_system import daily_log
 from trading_system.daily_log import (
     COLUMNS,
     append_row,
@@ -160,3 +162,44 @@ class TestMarkdownMirror:
         os.makedirs(log_dir, exist_ok=True)
         path = write_markdown("student_9", log_dir)
         assert path and "No runs yet" in open(path).read()
+
+
+class TestTheWorkflowRebuildsEachLogWithItsOwnRenderer:
+    """trading-logs/ holds three KINDS of CSV. Handing an alpha log or a trade
+    ledger to the daily-log renderer does not fail -- it quietly writes a daily
+    log full of "n/a" over the real file. A blanket glob did exactly that.
+    """
+
+    WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "trading-analysis.yml"
+
+    def test_the_rebuild_dispatches_on_the_prefix(self):
+        text = self.WORKFLOW.read_text()
+        assert 'name.startswith("alpha_")' in text
+        assert "alpha_log.write_markdown" in text
+
+    def test_the_daily_renderer_is_not_handed_everything_it_finds(self):
+        text = self.WORKFLOW.read_text()
+        assert 'from trading_system.daily_log import write_markdown' not in text, (
+            "the bare import was the shape of the bug: every CSV went to one renderer"
+        )
+
+    def test_the_ledger_is_left_alone(self):
+        assert 'name.startswith("trades_")' in self.WORKFLOW.read_text()
+
+    def test_an_alpha_csv_through_the_daily_renderer_is_visibly_wrong(self, tmp_path):
+        """Proof the mix-up is silent, which is why the dispatch must be explicit."""
+        from trading_system import alpha as alpha_lib
+        from trading_system import alpha_log
+
+        alpha_log.append_row(
+            alpha_log.build_row(
+                student_id="s1",
+                summary=alpha_lib.Summary(trades=5, open_trades=2, mean_excess=1.5),
+            ),
+            str(tmp_path),
+        )
+        # Rendering the alpha CSV as a daily log succeeds -- and produces junk.
+        daily_log.write_markdown("alpha_s1", str(tmp_path))
+        text = (tmp_path / "alpha_s1.md").read_text()
+        assert "daily trading log" in text.lower()
+        assert "n/a" in text
