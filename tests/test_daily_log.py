@@ -217,7 +217,7 @@ class TestTheWorkflowRebuildsEachLogWithItsOwnRenderer:
         """Every student's job uploads the WHOLE trading-logs/ directory, so
         all three artifacts hold all three CSVs -- two of them stale. Merging
         them into one directory makes the last one extracted win, which threw
-        away the other students' rows. Sharvi's log had 2 rows against
+        away the other students' rows. student_3's log had 2 rows against
         Shivika's 7 for exactly this reason, while every job reported success.
         """
         text = self.WORKFLOW.read_text()

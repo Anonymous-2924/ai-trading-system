@@ -145,16 +145,16 @@ students:
     high_beta: ["TSLA", "NVDA", "PLTR", "COIN", "SMCI"]
     diversified: ["AAPL", "MSFT", "JNJ", "JPM", "XOM", "PG", "V", "CAT", "UNH"]
   - id: student_2
-    name: Kanika Mittal
-    roll_no: "065030"
+    name: Sharvi Sood
+    roll_no: "065047"
     key_env: ALPACA_API_KEY_2
     secret_env: ALPACA_SECRET_KEY_2
     starting_equity: 100000.0
     high_beta: ["AMD", "MRNA", "ENPH", "RIVN", "DKNG"]
     diversified: ["GOOGL", "AMZN", "KO", "BAC", "CVX", "HD", "MRK", "HON", "COST"]
   - id: student_3
-    name: Sharvi Sood
-    roll_no: "065047"
+    name: Kanika Mittal
+    roll_no: "065030"
     key_env: ALPACA_API_KEY_3
     secret_env: ALPACA_SECRET_KEY_3
     starting_equity: 100000.0

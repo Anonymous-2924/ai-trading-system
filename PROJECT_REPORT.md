@@ -11,8 +11,8 @@
 | Role | Name | Roll No. |
 |---|---|---|
 | Student 1 | Shivika Khanna | 065049 |
-| Student 2 | Kanika Mittal | 065030 |
-| Student 3 | Sharvi Sood | 065047 |
+| Student 2 | Sharvi Sood | 065047 |
+| Student 3 | Kanika Mittal | 065030 |
 
 ---
 
@@ -43,8 +43,8 @@ Each of us has 14 stocks, 42 across the group. The brief required at least 30% o
 | Member | High-beta (5) | Diversified (9) |
 |---|---|---|
 | Shivika Khanna | TSLA, NVDA, PLTR, COIN, SMCI | AAPL, MSFT, JNJ, JPM, XOM, PG, V, CAT, UNH |
-| Kanika Mittal | AMD, MRNA, ENPH, RIVN, DKNG | GOOGL, AMZN, KO, BAC, CVX, HD, MRK, HON, COST |
-| Sharvi Sood | MARA, AFRM, UPST, CCL, ON | META, ORCL, PEP, WFC, LMT, DIS, ABBV, NKE, WMT |
+| Sharvi Sood | AMD, MRNA, ENPH, RIVN, DKNG | GOOGL, AMZN, KO, BAC, CVX, HD, MRK, HON, COST |
+| Kanika Mittal | MARA, AFRM, UPST, CCL, ON | META, ORCL, PEP, WFC, LMT, DIS, ABBV, NKE, WMT |
 
 We picked the high-beta names to be representative of the kind of stock in the S&P High Beta Index — large US companies whose share prices swing a lot more than the market average. We should be honest that we did not check these against the official published index membership, which is updated every quarter. If exact index membership matters for marking, this is easy to correct, because the stock lists live in a configuration file and nothing is hard-coded in the program.
 
@@ -170,7 +170,7 @@ The entire decision process — all 29 indicators, the scoring, the thresholds �
 
 The reason this matters is that free AI services fail constantly. They hit rate limits, they time out, and small models sometimes get stuck in a loop and return an empty answer. If our system depended on the AI, a bad day would mean no trading at all and a gap in our records.
 
-Instead, when the AI fails the arithmetic takes over and the day continues normally. This has already happened to us in a live run. From Sharvi's log on 17 October:
+Instead, when the AI fails the arithmetic takes over and the day continues normally. This has already happened to us in a live run. From Kanika's log on 17 October:
 
 ```
 LLM path unavailable, using the deterministic rule engine: the model
@@ -285,26 +285,42 @@ The composite score, however, is genuinely gone for those early trades: it exist
 
 We also built a Streamlit dashboard, which presents the results in a dark, neon-lit terminal style. It is deliberately **read-only**: it has no order entry, no execute mode and no ability to place a trade. All trading happens in the automated GitHub Actions pipeline, and the dashboard's only job is to show what that pipeline did. Alpaca keys may be entered to price open positions and draw live price charts, and are held for the browser session only, never written to disk.
 
-It has four tabs. The first shows the group: all three accounts side by side, combined equity, the trajectory of every stock we hold, and combined daily profit and loss with a running total. The remaining three — one each for Shivika, Kanika and Sharvi — show that member's equity trajectory, their daily profit and loss with their best and worst days, the price trajectory of their own stocks, their current alpha attribution, their alpha history across every run that has taken place, their complete order ledger, and their full run history.
+It has four tabs. The first shows the group: all three accounts side by side, combined equity, the trajectory of every stock we hold, and combined daily profit and loss with a running total. The remaining three — one each for Shivika, Sharvi and Kanika — show that member's equity trajectory, their daily profit and loss with their best and worst days, the price trajectory of their own stocks, their current alpha attribution, their alpha history across every run that has taken place, their complete order ledger, and their full run history.
 
 ## 6. Results So Far
 
-Trading began on 17 October. The figures below are as of 26 October, covering five completed trading days.
+Trading began on 17 October. The figures below are **each account's last recorded run, not a live reading**. The most recent is 23 October, the last trading day before this report; the market was closed over the weekend. Our Alpaca accounts will have moved since, because equity is only written down when a run happens.
 
-| Member | Starting | Current equity | Profit / Loss | Return | Positions | Days logged |
+| Member | Starting | Equity at last run | Profit / Loss | Return | Positions | Runs logged |
 |---|---|---|---|---|---|---|
-| Shivika Khanna | $100,000 | $100,571.87 | +$571.87 | +0.57% | 8 | 7 |
-| Kanika Mittal | $100,000 | $98,801.11 | −$1,198.89 | −1.20% | 10 | 6 |
-| Sharvi Sood | $100,000 | $100,135.28 | +$135.28 | +0.14% | 5 | 2 |
-| **Group** | **$300,000** | **$299,508.26** | **−$491.74** | **−0.16%** | **23** | |
+| Shivika Khanna | $100,000 | $100,597.60 | +$597.60 | +0.60% | 8 | 11 |
+| Sharvi Sood | $100,000 | $98,801.11 | −$1,198.89 | −1.20% | 10 | 11 |
+| Kanika Mittal | $100,000 | $100,963.10 | +$963.10 | +0.96% | 8 | 11 |
+| **Group** | **$300,000** | **$300,361.81** | **+$361.81** | **+0.12%** | **26** | |
 
-The group as a whole is close to flat, slightly below where it started. Shivika's portfolio is up about half a percent, Kanika's is down just over one percent, and Sharvi's is marginally up.
+The group as a whole is close to flat, very slightly ahead of where it started. Shivika's portfolio is up about six-tenths of a percent, Kanika's is up nearly one percent, and Sharvi's is down just over one percent.
 
-Kanika's account was up $1,720 on 22 October and then lost $2,813 in a single day, which is what moved it into negative territory. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it actually happen is a useful reminder of what the aggression setting means in practice.
+Sharvi's account was up $1,720 on 22 October and then lost $2,813 in a single day, which is what moved it into negative territory. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it actually happen is a useful reminder of what the aggression setting means in practice.
+
+### Did we beat the market?
+
+Equity alone cannot answer that, because a rising market lifts everything. Measured on the trades themselves, against the S&P 500:
+
+| Member | Trades measured | Mean return | Versus the market | After adjusting for risk | Win rate |
+|---|---|---|---|---|---|
+| Shivika Khanna | 12 (8 still open) | +0.54% | **+1.26%** | **+1.65%** | 66.7% |
+| Sharvi Sood | 10 (10 still open) | −0.91% | −0.03% | −0.23% | 50.0% |
+| Kanika Mittal | 10 (8 still open) | +1.08% | **+1.98%** | **+1.72%** | 60.0% |
+
+Two of the three accounts are ahead of the market on the stocks they chose, and still ahead after adjusting for the fact that we deliberately chose jumpier-than-average stocks — which is the stricter test.
+
+We want to be careful about how much weight this carries. Ten to twelve trades each is far below the thirty that would be a bare minimum for the numbers to mean anything, and realistically it takes hundreds. At this sample size a coin toss could produce the same result. The honest answer to "is this skill or luck?" is that we cannot yet tell, and we would rather say so than present these figures as a success.
+
+The third measure we built, which asks whether our scores actually predicted the returns that followed, cannot be computed for these trades at all: we were not recording the score behind each trade when they were made. That measurement starts from now.
 
 Two honest caveats about these numbers:
 
-Sharvi's account has only two logged days compared with seven and six for the others, so her figure of $100,135 is from 20 October and is stale. Her actual current position is almost certainly different. This was a logging problem rather than a trading problem — her positions and orders are real and visible in her Alpaca account. We have now found and fixed the cause, which is described in section 7; her log should fill in from the next scheduled run onwards.
+These figures are now complete for all three of us. Until very recently Kanika's log held only two rows against eleven for the others, which made her account look as though it had barely traded. That was the records fault described in section 7, not a trading fault, and the missing rows have since been read back out of the saved attachments of each run. All three accounts now have the same eleven runs recorded over the same six trading days.
 
 More importantly, four trading days tells us essentially nothing about whether the strategy is any good. The differences between the three of us at this point are much more likely to reflect which stocks happened to be in whose portfolio than any difference in skill. We would not draw conclusions about performance from this sample.
 
@@ -312,11 +328,11 @@ More importantly, four trading days tells us essentially nothing about whether t
 
 We think this section is worth including in full, because several of these were only found by running the system live.
 
-**The ON Semiconductor bug.** This was the most interesting one. After our first live run, Sharvi's log contained the line `TRUE: order failed`. There is no stock with the ticker symbol TRUE.
+**The ON Semiconductor bug.** This was the most interesting one. After our first live run, Kanika's log contained the line `TRUE: order failed`. There is no stock with the ticker symbol TRUE.
 
-The cause was in the YAML configuration format we use for the stock lists. YAML version 1.1 treats a bare `ON` as the boolean value true, in the same way as `YES` and `NO`. Sharvi's high-beta list contained `ON` for ON Semiconductor, which was read as the value true and then converted to the text "TRUE". The system was trying to buy a stock that does not exist.
+The cause was in the YAML configuration format we use for the stock lists. YAML version 1.1 treats a bare `ON` as the boolean value true, in the same way as `YES` and `NO`. Kanika's high-beta list contained `ON` for ON Semiconductor, which was read as the value true and then converted to the text "TRUE". The system was trying to buy a stock that does not exist.
 
-It had two effects. Sharvi was actually trading 13 stocks rather than 14, and because the sector lookup was also affected, ON was escaping the technology sector exposure limit.
+It had two effects. Kanika was actually trading 13 stocks rather than 14, and because the sector lookup was also affected, ON was escaping the technology sector exposure limit.
 
 We fixed it by quoting every stock symbol in the configuration file, and by making the program refuse outright to accept a boolean where a stock symbol should be, with an error message explaining how to fix it. We added eight tests, including one that checks every symbol in the configuration file reads as text.
 
@@ -324,15 +340,21 @@ We would not have found this without running live. All our tests passed beforeha
 
 **One team member silently stopped being logged.** This was the most serious problem we found, and the hardest to see, because nothing reported an error.
 
-Sharvi's log stopped updating after 20 October while the other two carried on. Her trades were still happening and were visible in her Alpaca account, but no daily record was being written.
+Kanika's log stopped updating after 20 October while the other two carried on. Her trades were still happening and were visible in her Alpaca account, but no daily record was being written.
 
-The cause turned out to be a chain of three things. The three accounts run one after another in a fixed order, sharing a single free AI quota. Shivika runs first and uses most of it. By the time Sharvi's turn came, every AI request was being rate-limited, and our retry settings — eight attempts, each allowed up to 180 seconds — meant her run could spend well over half an hour simply waiting. The automation job has its own 40-minute limit, so GitHub killed the job before it ever reached the step that writes the log.
+Our first explanation was wrong, and we think the way we found that out is worth recording. We assumed the three accounts were starving each other of the shared free AI quota, and that Kanika's run — which goes last — was being killed by the job time limit before it could write its log. It was a plausible story and it fitted the symptom, so we acted on it and reduced the quota accordingly.
 
-We had designed the system so that a run which cannot read the account still writes a row, precisely so gaps would be visible. That protection was useless here, because the process was killed outright rather than failing gracefully.
+Then we read her actual job log instead of reasoning about it. Her run had completed in full: it read her account, computed her signals and wrote all six agent files. It had reported success. The row simply never arrived in the repository.
 
-We fixed it in three ways. First, we added a hard time budget for the AI stage — if it has not finished within seven minutes, it is abandoned and the deterministic engine takes over, so a run can no longer overrun its job. Second, we reduced the number of stocks sent to the AI from 12 to 8 per person, which brings the whole team inside the free quota instead of starving whoever goes last. Third, we gave each scheduled run its own queue so a delayed trading run no longer blocks the evening snapshot behind it.
+The real cause was in how the records are collected. Each account's run saves the whole records folder as an attachment, which means every attachment contains all three people's files — that account's updated file, and the other two exactly as they were before the run. The step that gathers the attachments merged them into a single folder, and when three files share a name the last one copied wins. So on every run, two of the three people's new rows were overwritten by stale copies, at random. Nothing failed, which is why nothing was reported.
 
-We verified the fix by simulating a crew that hangs indefinitely and confirming that the run still completed, still fell back with an announcement, and still wrote its log row.
+This is the kind of fault that is invisible from the outside: every job green, every account trading correctly, and the records quietly wrong. It only became findable when we stopped trusting the summary and read the underlying log.
+
+We fixed it at two levels. The gathering step no longer merges the attachments into one folder; it reads each one separately and keeps the union of all the rows, so nothing can overwrite anything. More importantly, each account's run now saves only its own files, so the three attachments have nothing in common to collide over — even if the gathering step were changed again in future, there would be nothing left to lose. We also wrote a recovery tool that reads the missing rows back out of the saved attachments, which still hold them for seven days after each run.
+
+We verified both the fault and the fix by reproducing the overwrite against the real merge script, then confirming that the corrected version keeps all three people's rows, and that running the recovery twice adds nothing the second time.
+
+The time budget and quota reduction we had already made are still worth having — an AI stage that hangs would genuinely be a problem — but they were not what was wrong here, and we have left the record of that mistake in this report rather than quietly replacing it.
 
 **Market closed on the first run.** Our first run was on a Saturday. Alpaca accepted all 16 orders across the three accounts but they stayed queued until Monday's open. For a while we thought the system was broken because nothing appeared to be happening. It was working correctly; we were just looking at it on a non-trading day.
 
@@ -367,7 +389,7 @@ We want to be clear about what this project does and does not demonstrate.
 
 **The high-beta stock list is representative rather than verified.** As noted in section 3, we have not checked it against the official index membership.
 
-**One account has incomplete logging.** Sharvi's log has gaps on days where the job did not reach the logging stage. Her trading is unaffected but her recorded history is thinner than the others'.
+**One account has incomplete logging.** Kanika's recorded history has gaps, for the reason described in section 7: her rows were being overwritten when the records were gathered. Her trading was never affected, and the missing rows are being recovered from the saved attachments of each run. Any run older than seven days is beyond recovery, because the attachments expire.
 
 **The sentiment analysis is simple.** It scores news headlines using a word list rather than a language model. We chose this deliberately so it keeps working when the AI is unavailable and so every score can be traced back to the words that produced it, but it is less sophisticated than it could be.
 

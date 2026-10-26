@@ -678,7 +678,7 @@ GitHub Actions pipeline, and this shows what the pipeline did. Four tabs:
 | Tab | Shows |
 | --- | --- |
 | **Group** | All three members side by side, group equity/P&L/return, a combined equity trajectory, every traded stock rebased to 100, and combined daily P&L with the running total. No alpha section: alpha is per member. |
-| **Shivika / Kanika / Sharvi** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, **their alpha history across every run**, the full order ledger, and the complete run history. |
+| **Shivika / Sharvi / Kanika** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, **their alpha history across every run**, the full order ledger, and the complete run history. |
 
 ### What the dashboard reads, and what it does not
 
@@ -772,7 +772,7 @@ beside it as a GitHub table:
 | **By** | `pipeline._record_alpha`, straight after the ledger is written, so the run's own orders are counted |
 | **Holds** | Trades measured, open vs closed, mean return, excess, Jensen's alpha, win rate, IC, total P&L, benchmark, data source |
 | **Committed** | By the `commit-logs` job, exactly like the daily logs |
-| **Shown** | In the dashboard, on each member's own tab — Shivika, Kanika, Sharvi — as cards, a line chart of the three measures over time, and the full table |
+| **Shown** | In the dashboard, on each member's own tab — Shivika, Sharvi, Kanika — as cards, a line chart of the three measures over time, and the full table |
 
 There is deliberately **no group alpha section**: alpha is a per-member
 measure, and averaging three different books hides exactly the differences
