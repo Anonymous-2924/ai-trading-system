@@ -670,17 +670,24 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 streamlit run dashboard/app.py
 ```
 
-Credentials are entered in the sidebar and held in `st.session_state` **for
-the life of the browser session only** — never written to disk, never placed
-in `st.secrets`, never logged. Closing the tab discards them.
+A **read-only** terminal with a neon/cyberpunk theme. It has **no order
+entry, no approval controls and no execute mode** — trading happens in the
+GitHub Actions pipeline, and this shows what the pipeline did. Four tabs:
 
-The five tabs cover: picking a student, the symbols and the indicator
-dimensions; configuring aggression, thresholds and dimension weights; starting
-and stopping a run; reviewing recommendations with the per-dimension breakdown
-and per-symbol rationale; approving individual trades before anything is sent;
-positions and P&L; execution history; and the daily logs with an equity chart.
+| Tab | Shows |
+| --- | --- |
+| **Group** | All three members side by side, group equity/P&L/return, a combined equity trajectory, every traded stock rebased to 100, whole-group alpha attribution, and combined daily P&L with the running total. |
+| **Shivika / Kanika / Sharvi** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, the full order ledger, and the complete run history. |
 
----
+Data comes from the committed CSV logs in `trading-logs/`, so the history is
+always in sync with what the pipeline pushed. Alpha is recomputed from the
+ledger on every load, so it reflects the most recent trade rather than a
+stale snapshot.
+
+Alpaca keys in the sidebar are **optional and read-only** — used only to
+price open positions and draw price charts. They are held for the browser
+session and never written to disk. Without them, tick "use synthetic prices"
+and the charts still render from clearly-labelled fake data.
 
 ## Demo mode and the refusal to invent
 
