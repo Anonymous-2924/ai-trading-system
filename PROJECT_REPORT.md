@@ -350,7 +350,7 @@ We verified the fix by simulating a crew that hangs indefinitely and confirming 
 
 ## 8. Testing
 
-We have 428 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, the per-member alpha log and the recovery of earlier trades, and the full pipeline from end to end.
+We have 454 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, the per-member alpha log and the recovery of earlier trades, and the full pipeline from end to end.
 
 Beyond the unit tests we also:
 

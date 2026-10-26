@@ -203,3 +203,12 @@ class TestTheWorkflowRebuildsEachLogWithItsOwnRenderer:
         text = (tmp_path / "alpha_s1.md").read_text()
         assert "daily trading log" in text.lower()
         assert "n/a" in text
+
+    def test_the_price_history_is_not_rendered_as_a_log(self):
+        """prices.csv is raw data. Through the daily-log renderer it would
+        overwrite nothing useful and produce a meaningless page."""
+        assert 'name == "prices"' in self.WORKFLOW.read_text()
+
+    def test_the_price_history_is_deduplicated_after_the_merge(self):
+        """The line-wise merge can leave two closes for one symbol-day."""
+        assert "price_log.append_closes" in self.WORKFLOW.read_text()

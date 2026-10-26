@@ -84,7 +84,7 @@ pytest
 | `python scripts/await_market_window.py --window open` | Wait for the right point in the session |
 | `python scripts/check_alpaca.py` | Show which Alpaca account each key pair belongs to |
 | `streamlit run dashboard/app.py` | The control panel |
-| `pytest` | 428 tests |
+| `pytest` | 454 tests |
 
 ---
 
@@ -642,7 +642,7 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 
-- `pytest` (428 tests) on Python **3.11 and 3.12**, on every push and PR.
+- `pytest` (454 tests) on Python **3.11 and 3.12**, on every push and PR.
 - Runs the **demo pipeline end to end** and asserts the agent artefacts and
   all six log files were produced, and that no demo artefact claims live data.
 - Starts the **MCP server** and asserts every tool is strict-mode safe.
@@ -679,6 +679,25 @@ GitHub Actions pipeline, and this shows what the pipeline did. Four tabs:
 | --- | --- |
 | **Group** | All three members side by side, group equity/P&L/return, a combined equity trajectory, every traded stock rebased to 100, and combined daily P&L with the running total. No alpha section: alpha is per member. |
 | **Shivika / Kanika / Sharvi** | That member's equity trajectory, daily P&L bars with best/worst run, their stocks' trajectory, their own alpha attribution, **their alpha history across every run**, the full order ledger, and the complete run history. |
+
+### What the dashboard reads, and what it does not
+
+The dashboard shows **files in your local checkout**, not GitHub directly, and
+not your live Alpaca account. Three consequences worth knowing:
+
+- **It needs no credentials.** Price trajectories come from
+  `trading-logs/prices.csv`, which every run commits. The Alpaca key box in
+  the sidebar is optional and only tops up symbols or days the committed
+  history does not cover.
+- **`git pull` is what refreshes it.** A banner at the top of the Group tab
+  says how old the newest run is, and turns into a red warning when your
+  checkout is behind GitHub. The **Sync from GitHub** button next to it runs
+  the pull for you.
+- **It will always lag live Alpaca.** Equity is recorded when a run happens —
+  three times a weekday — so between runs your Alpaca screen will have moved
+  and this page will not. That is the page being honest about what was
+  recorded, not a bug.
+
 
 Data comes from the committed CSV logs in `trading-logs/`, so the history is
 always in sync with what the pipeline pushed. Alpha is recomputed from the
@@ -800,7 +819,7 @@ The composite score and conviction are gone. They lived only in that run's
 ## Testing
 
 ```bash
-pytest                      # 428 tests
+pytest                      # 454 tests
 pytest -m slow              # the live MCP server and the real-crew integration
 ```
 
@@ -845,7 +864,7 @@ I built this in a sandbox whose egress policy blocks every external host.
 
 ### Verified by actually running it
 
-- **428 tests pass** on Python 3.12.
+- **454 tests pass** on Python 3.12.
 - **Indicators against hand calculations.** RSI(3) = 78.333333 and ATR(3) =
   2.333333 on worked examples, matching to 1e-6.
 - **The MCP server started as a real subprocess** and all 10 tools called over

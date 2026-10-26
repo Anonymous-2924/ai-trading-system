@@ -413,10 +413,16 @@ jobs:
               name = csv.stem
               if name.startswith("alpha_"):
                   print("rebuilt", alpha_log.write_markdown(name[len("alpha_"):], "trading-logs"))
-              elif name.startswith("trades_"):
-                  pass  # the ledger is raw data; the alpha log is its summary
+              elif name.startswith("trades_") or name == "prices":
+                  pass  # raw data: the ledger and the price history have no page
               else:
                   print("rebuilt", daily_log.write_markdown(name, "trading-logs"))
+
+          # The line-wise merge above can leave two rows for the same symbol
+          # on the same day if a later run saw a different close. Rewriting
+          # the file collapses them, last value winning.
+          from trading_system import price_log
+          print("prices", price_log.append_closes([], "trading-logs"))
           PY
           ls -la trading-logs/ || true
 

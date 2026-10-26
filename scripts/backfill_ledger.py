@@ -47,7 +47,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from trading_system import alpha as alpha_lib  # noqa: E402
-from trading_system import alpha_log, trade_ledger  # noqa: E402
+from trading_system import alpha_log, price_log, trade_ledger  # noqa: E402
 from trading_system.alpaca_client import AlpacaError, build_client  # noqa: E402
 from trading_system.config import load_config  # noqa: E402
 from trading_system.indicators import rolling_beta  # noqa: E402
@@ -187,11 +187,11 @@ def backfill_student(cfg, student, dry_run: bool) -> dict:
 
     out["new_rows"] = len(fresh)
     out["already_logged"] = len(existing)
-    if not fresh:
-        return out
 
     combined = existing + fresh
     symbols = sorted({r["symbol"] for r in combined if r.get("symbol")})
+    if not symbols:
+        return out
 
     try:
         bars = client.get_bars(symbols + [alpha_lib.BENCHMARK], days=180)
@@ -199,6 +199,15 @@ def backfill_student(cfg, student, dry_run: bool) -> dict:
         bars = {}
         out["error"] = f"prices unavailable, beta left blank: {exc}"
     benchmark_bars = bars.get(alpha_lib.BENCHMARK)
+
+    # Seed the committed price history whether or not there were new trades,
+    # so re-running this is enough to give the dashboard its charts.
+    if bars and not dry_run:
+        seeded = price_log.append_closes(price_log.rows_from_bars(bars), cfg.log_dir)
+        out["price_rows"] = seeded.get("rows", 0)
+
+    if not fresh:
+        return out
 
     betas = measured_betas(bars, benchmark_bars, fresh)
     for row in fresh:
@@ -282,6 +291,8 @@ def main() -> int:
             failures += 1
         print(f"  already in the ledger : {result.get('already_logged', 0)}")
         print(f"  recovered from Alpaca : {result['new_rows']}")
+        if result.get("price_rows"):
+            print(f"  price history rows    : {result['price_rows']}")
         for row in result.get("preview", []):
             print(
                 f"      {row['date']}  {row['side']:4s} {row['symbol']:6s} "

@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from . import alpha as alpha_lib
-from . import alpha_log, daily_log, trade_ledger
+from . import alpha_log, daily_log, price_log, trade_ledger
 from .agents import CrewRunResult, run_crew
 from .alpaca_client import AlpacaClient, AlpacaError, MarketDataUnavailable, build_client
 from .config import AppConfig, StudentConfig
@@ -444,9 +444,28 @@ def run_for_student(
         errors=(result.errors + result.fallbacks) or None,
     )
 
+    _record_prices(cfg, result, bars, benchmarks)
     _record_alpha(cfg, student, result, bars, benchmarks, run_label)
     _finalise(cfg, student, result, client, rl, account)
     return result
+
+
+def _record_prices(cfg: AppConfig, result: RunResult, bars, benchmarks) -> None:
+    """Save the closes this run already fetched, so the dashboard can draw a
+    trajectory without asking anyone for Alpaca credentials."""
+    if result.data_source.startswith("DEMO"):
+        return  # synthetic prices must never be committed as real history
+    try:
+        combined = dict(bars or {})
+        combined.update(benchmarks or {})
+        status = price_log.append_closes(
+            price_log.rows_from_bars(combined), cfg.log_dir
+        )
+        if not status.get("ok"):
+            result.errors.append(f"price history failed: {status.get('error')}")
+    except Exception as exc:
+        log.exception("price history failed")
+        result.errors.append(f"price history failed: {type(exc).__name__}: {exc}")
 
 
 def _record_alpha(

@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from trading_system import alpha as alpha_lib  # noqa: E402
-from trading_system import alpha_log, daily_log, trade_ledger  # noqa: E402
+from trading_system import alpha_log, daily_log, price_log, trade_ledger  # noqa: E402
 from trading_system.alpaca_client import (  # noqa: E402
     AlpacaError,
     MarketDataUnavailable,
@@ -267,6 +267,20 @@ def load_ledger(student_id: str, log_dir: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def load_committed_prices(log_dir: str) -> Dict[str, pd.DataFrame]:
+    """Closing prices straight from the repository.
+
+    This is the default source, and it needs no credentials: every run saves
+    the closes it fetched into `trading-logs/prices.csv`, which is committed
+    like every other log. Keys only ever ADD to this.
+    """
+    try:
+        return price_log.to_frames(log_dir)
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def load_prices(symbols: tuple, key: str, secret: str, demo: bool) -> Dict[str, pd.DataFrame]:
     """Daily bars for the traded symbols plus the benchmark. Cached."""
     if not symbols:
@@ -332,7 +346,7 @@ with st.sidebar:
 
     st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
     st.caption(f"Logs: `{cfg.log_dir}`")
-    st.caption(f"Updated {datetime.now(timezone.utc):%H:%M UTC}")
+    st.caption(f"Page opened {datetime.now(timezone.utc):%H:%M UTC}")
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +354,103 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 daily_frames = {s.id: load_daily(s.id, cfg.log_dir) for s in cfg.students}
 ledger_frames = {s.id: load_ledger(s.id, cfg.log_dir) for s in cfg.students}
+
+def repository_state(log_dir: str) -> dict:
+    """How current the files on disk are, and whether git has newer ones.
+
+    This page reads FILES, not GitHub. A checkout that has not been pulled
+    shows old numbers and looks broken when it is merely stale, so say so
+    plainly rather than letting the reader guess.
+    """
+    import subprocess
+
+    state = {"behind": 0, "head": "", "checked": False, "error": ""}
+    try:
+        root = Path(log_dir).resolve()
+        root = root.parent if root.name == "trading-logs" else root
+        def git(*args):
+            return subprocess.run(
+                ["git", "-C", str(root), *args],
+                capture_output=True, text=True, timeout=20,
+            )
+        head = git("rev-parse", "--short", "HEAD")
+        if head.returncode != 0:
+            state["error"] = "not a git checkout"
+            return state
+        state["head"] = head.stdout.strip()
+        branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        fetch = git("fetch", "--quiet", "origin", branch)
+        if fetch.returncode != 0:
+            state["error"] = "could not reach GitHub"
+            return state
+        counts = git("rev-list", "--count", f"HEAD..origin/{branch}")
+        if counts.returncode == 0 and counts.stdout.strip().isdigit():
+            state["behind"] = int(counts.stdout.strip())
+            state["checked"] = True
+        state["branch"] = branch
+    except Exception as exc:
+        state["error"] = f"{type(exc).__name__}"
+    return state
+
+
+def freshness_banner(daily_frames: Dict[str, pd.DataFrame], log_dir: str):
+    """Say how old these numbers are, and offer to pull newer ones."""
+    stamps = [
+        frame["when"].max() for frame in daily_frames.values()
+        if not frame.empty and "when" in frame
+    ]
+    newest = max(stamps) if stamps else None
+
+    left, right = st.columns([4, 1])
+    with left:
+        if newest is None:
+            st.warning(
+                "No run has been logged yet, so there is nothing to show. "
+                "The numbers appear after the next scheduled run."
+            )
+        else:
+            age = datetime.now(timezone.utc) - newest.to_pydatetime()
+            hours = age.total_seconds() / 3600.0
+            when = f"{newest:%d %b %H:%M} UTC"
+            if hours < 14:
+                st.markdown(
+                    f'<span class="pill">LAST RUN {when}</span>',
+                    unsafe_allow_html=True)
+            else:
+                st.warning(
+                    f"These figures are from the last recorded run, {when} "
+                    f"— about {int(hours)} hours ago. They are not live. "
+                    "Your Alpaca account will have moved since then; this page "
+                    "shows what the pipeline recorded, and updates after each run."
+                )
+
+    state = repository_state(log_dir)
+    with right:
+        if st.button("⟳ Sync from GitHub", use_container_width=True):
+            import subprocess
+            root = Path(log_dir).resolve()
+            root = root.parent if root.name == "trading-logs" else root
+            pull = subprocess.run(
+                ["git", "-C", str(root), "pull", "--ff-only", "origin",
+                 state.get("branch") or "HEAD"],
+                capture_output=True, text=True, timeout=90,
+            )
+            if pull.returncode == 0:
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error("Could not pull: " + (pull.stderr or "unknown error").strip()[:300])
+
+    if state.get("behind"):
+        st.error(
+            f"**This copy is {state['behind']} commit(s) behind GitHub.** "
+            "The logs on GitHub are newer than the files on this machine, so "
+            "everything below is out of date. Press *Sync from GitHub* above, "
+            "or run `git pull` in the project folder."
+        )
+    elif state.get("error"):
+        st.caption(f"Could not check GitHub for newer logs ({state['error']}).")
+
 
 traded_symbols = sorted(
     {
@@ -350,7 +461,17 @@ traded_symbols = sorted(
     }
 )
 price_universe = tuple(traded_symbols + [alpha_lib.BENCHMARK]) if traded_symbols else ()
-prices = load_prices(price_universe, api_key, api_secret, demo_prices)
+
+# The repository is the baseline. Live keys, when supplied, only fill in
+# symbols or days the committed history does not already cover -- they are
+# never required for the page to work.
+prices = dict(load_committed_prices(cfg.log_dir))
+price_source = "repository" if prices else "none"
+if api_key and api_secret or demo_prices:
+    live = load_prices(price_universe, api_key, api_secret, demo_prices)
+    if live:
+        prices.update(live)
+        price_source = "live feed" if not demo_prices else "synthetic"
 closes = {
     sym: float(frame["close"].iloc[-1])
     for sym, frame in prices.items()
@@ -508,8 +629,9 @@ def trajectory_chart(symbols: List[str], height=340):
         )
     if not series:
         st.info(
-            "Price history needs market data. Add read-only Alpaca keys in the "
-            "sidebar, or tick synthetic prices."
+            "No price history yet. Every run saves the closes it fetched into "
+            "`trading-logs/prices.csv`; this chart fills in from the next run "
+            "onwards, with no keys needed."
         )
         return
     combined = pd.concat(series)
@@ -826,6 +948,7 @@ tabs = st.tabs(tab_labels)
 # GROUP
 # ---------------------------------------------------------------------------
 with tabs[0]:
+    freshness_banner(daily_frames, cfg.log_dir)
     st.markdown("## Team performance")
 
     total_equity = 0.0
