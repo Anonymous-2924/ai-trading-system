@@ -234,7 +234,9 @@ jobs:
           SCHEDULED_MODE: ${{ vars.SCHEDULED_MODE }}
           LLM_PROVIDER: ollama_cloud
           LLM_MODEL: ${{ inputs.model }}
-          MAX_LLM_SYMBOLS: ${{ inputs.max_llm_symbols || '12' }}
+          # Empty on a scheduled run, so config/config.yaml decides. Hard-coding
+          # a fallback here silently overrode the quota set in the config.
+          MAX_LLM_SYMBOLS: ${{ inputs.max_llm_symbols }}
           AGGRESSION: ${{ inputs.aggression || '0.75' }}
           DEMO_MODE: "false"
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
@@ -376,13 +378,19 @@ jobs:
         with:
           pattern: trading-log-*-${{ github.run_id }}
           path: incoming
-          merge-multiple: true
+          # NOT merge-multiple. Every student's job uploads the WHOLE
+          # trading-logs/ directory, so all three artifacts contain all three
+          # CSVs -- their own updated one and the other two as checked out,
+          # without that run's new row. Merging them into one directory makes
+          # the last artifact extracted win, which silently threw away the
+          # other students' rows. Keeping them in separate directories and
+          # merging every file line by line takes the union instead.
 
       - name: Merge the rows into the committed logs
         run: |
           mkdir -p trading-logs
           shopt -s nullglob
-          for src in incoming/*.csv; do
+          for src in incoming/*/*.csv; do
             name="$(basename "$src")"
             dest="trading-logs/$name"
             if [ ! -f "$dest" ]; then

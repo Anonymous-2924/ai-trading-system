@@ -212,3 +212,36 @@ class TestTheWorkflowRebuildsEachLogWithItsOwnRenderer:
     def test_the_price_history_is_deduplicated_after_the_merge(self):
         """The line-wise merge can leave two closes for one symbol-day."""
         assert "price_log.append_closes" in self.WORKFLOW.read_text()
+
+    def test_the_artifacts_are_not_flattened_into_one_directory(self):
+        """Every student's job uploads the WHOLE trading-logs/ directory, so
+        all three artifacts hold all three CSVs -- two of them stale. Merging
+        them into one directory makes the last one extracted win, which threw
+        away the other students' rows. Sharvi's log had 2 rows against
+        Shivika's 7 for exactly this reason, while every job reported success.
+        """
+        text = self.WORKFLOW.read_text()
+        assert "merge-multiple: true" not in text
+        assert "incoming/*/*.csv" in text, "the merge must walk each artifact's own directory"
+
+    def test_the_symbol_cap_is_not_pinned_in_the_workflow(self):
+        """A hard-coded fallback here silently overrode config/config.yaml, so
+        lowering the quota in the config had no effect on a scheduled run."""
+        text = self.WORKFLOW.read_text()
+        assert "inputs.max_llm_symbols || '12'" not in text
+        assert "MAX_LLM_SYMBOLS: ${{ inputs.max_llm_symbols }}" in text
+
+    def test_an_empty_cap_falls_back_to_the_config(self):
+        import os
+
+        from trading_system.config import load_config
+
+        previous = os.environ.get("MAX_LLM_SYMBOLS")
+        os.environ["MAX_LLM_SYMBOLS"] = ""
+        try:
+            assert load_config("config/config.yaml").max_llm_symbols == 6
+        finally:
+            if previous is None:
+                os.environ.pop("MAX_LLM_SYMBOLS", None)
+            else:
+                os.environ["MAX_LLM_SYMBOLS"] = previous
