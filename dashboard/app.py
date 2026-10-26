@@ -17,6 +17,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -153,14 +154,151 @@ st.caption(
 )
 
 tabs = st.tabs(
-    ["Run", "Recommendations", "Positions & P&L", "Execution history", "Daily logs"]
+    ["Group overview", "Run", "Recommendations", "Positions & P&L",
+     "Execution history", "Daily logs"]
 )
 
 student_ids = [s.id for s in cfg.students]
 
 
+def _series(student) -> pd.DataFrame:
+    """That member's committed daily log as a frame, newest last."""
+    rows = daily_log.read_rows(student.id, cfg.log_dir)
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    for col in ("equity", "day_pl", "day_pl_pct", "total_pl", "total_pl_pct"):
+        if col in frame:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    frame["when"] = pd.to_datetime(frame["timestamp_utc"], errors="coerce", utc=True)
+    return frame.dropna(subset=["equity"]).sort_values("when")
+
+
+# ---------------------------------------------------------------------------
+# Group overview — the whole team on one screen.
 # ---------------------------------------------------------------------------
 with tabs[0]:
+    st.subheader("Team performance")
+
+    frames = {s.id: _series(s) for s in cfg.students}
+    latest, total_equity, total_start = {}, 0.0, 0.0
+    for student in cfg.students:
+        frame = frames[student.id]
+        total_start += student.starting_equity
+        if frame.empty:
+            latest[student.id] = None
+            total_equity += student.starting_equity
+        else:
+            row = frame.iloc[-1]
+            latest[student.id] = row
+            total_equity += float(row["equity"])
+
+    columns = st.columns(len(cfg.students))
+    for col, student in zip(columns, cfg.students):
+        row = latest[student.id]
+        with col:
+            st.caption(f"**{student.name}**  \n`{student.roll_no}`")
+            if row is None:
+                st.metric("Equity", "no data", "")
+                st.caption("No runs recorded yet.")
+                continue
+            pl = float(row["total_pl"])
+            st.metric(
+                "Equity",
+                f"${float(row['equity']):,.2f}",
+                f"{pl:+,.2f} ({float(row['total_pl_pct']):+.2f}%)",
+            )
+            st.caption(
+                f"{row['open_positions']} positions · {len(frames[student.id])} runs "
+                f"logged · as of {str(row['date'])}"
+            )
+
+    st.divider()
+    group_pl = total_equity - total_start
+    a, b, c = st.columns(3)
+    a.metric("Group equity", f"${total_equity:,.2f}")
+    b.metric("Group P&L", f"${group_pl:+,.2f}")
+    c.metric("Group return", f"{(group_pl / total_start * 100) if total_start else 0:+.2f}%")
+
+    # Equity curves, all three on one chart.
+    curves = []
+    for student in cfg.students:
+        frame = frames[student.id]
+        if frame.empty:
+            continue
+        curves.append(
+            frame[["when", "equity"]].assign(member=student.name).rename(
+                columns={"when": "time"}
+            )
+        )
+    if curves:
+        st.subheader("Equity over time")
+        combined = pd.concat(curves)
+        # A zero-based axis squashes four days of sub-1% movement into a flat
+        # line, so the scale is zoomed to the data with a small pad and the
+        # $100,000 starting line is drawn in for reference.
+        low = float(combined["equity"].min())
+        high = float(combined["equity"].max())
+        pad = max((high - low) * 0.15, 150.0)
+        chart = (
+            alt.Chart(combined)
+            .mark_line(point=True, strokeWidth=2.5)
+            .encode(
+                x=alt.X("time:T", title=None),
+                y=alt.Y(
+                    "equity:Q",
+                    title="Equity (USD)",
+                    scale=alt.Scale(domain=[low - pad, high + pad], zero=False),
+                    axis=alt.Axis(format="$,.0f"),
+                ),
+                color=alt.Color("member:N", title="Member"),
+                tooltip=[
+                    alt.Tooltip("member:N", title="Member"),
+                    alt.Tooltip("time:T", title="When"),
+                    alt.Tooltip("equity:Q", title="Equity", format="$,.2f"),
+                ],
+            )
+        )
+        baseline = (
+            alt.Chart(pd.DataFrame({"y": [100000.0]}))
+            .mark_rule(strokeDash=[6, 4], color="#888")
+            .encode(y="y:Q")
+        )
+        st.altair_chart((chart + baseline).properties(height=340),
+                        use_container_width=True)
+        st.caption("Dashed line marks the $100,000 starting equity.")
+    else:
+        st.info("No committed daily logs yet. Run the pipeline to populate this.")
+
+    # Staleness is worth surfacing: a member whose job keeps failing silently
+    # falls behind and the number above stops meaning anything.
+    counts = {s.name: len(frames[s.id]) for s in cfg.students}
+    if counts and max(counts.values()) - min(counts.values()) >= 2:
+        behind = [n for n, c in counts.items() if c == min(counts.values())]
+        st.warning(
+            f"Uneven logging: {', '.join(behind)} has {min(counts.values())} run(s) "
+            f"recorded against {max(counts.values())} for the others, so that "
+            "figure may be stale."
+        )
+
+    with st.expander("Universe and high-beta allocation"):
+        st.dataframe(
+            pd.DataFrame([
+                {
+                    "Member": s.name,
+                    "Roll no.": s.roll_no,
+                    "Symbols": len(s.symbols),
+                    "High-beta": f"{s.high_beta_pct:.0%}",
+                    "High-beta names": ", ".join(s.high_beta),
+                }
+                for s in cfg.students
+            ]),
+            use_container_width=True, hide_index=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+with tabs[1]:
     st.subheader("Select a student and the symbols to analyse")
     student_id = st.selectbox("Student", student_ids)
     student = cfg.student(student_id)
@@ -217,7 +355,7 @@ with tabs[0]:
 
 
 # ---------------------------------------------------------------------------
-with tabs[1]:
+with tabs[2]:
     result = st.session_state.get("last_run")
     if not result or not result.signals:
         st.info("Run an analysis first.")
@@ -302,7 +440,7 @@ with tabs[1]:
 
 
 # ---------------------------------------------------------------------------
-with tabs[2]:
+with tabs[3]:
     st.subheader("Account and positions")
     student_id = st.selectbox("Student", student_ids, key="pos_student")
     student = cfg.student(student_id)
@@ -342,7 +480,7 @@ with tabs[2]:
 
 
 # ---------------------------------------------------------------------------
-with tabs[3]:
+with tabs[4]:
     st.subheader("Execution history")
     result = st.session_state.get("last_run")
     if result and result.submitted:
@@ -366,7 +504,7 @@ with tabs[3]:
 
 
 # ---------------------------------------------------------------------------
-with tabs[4]:
+with tabs[5]:
     st.subheader("Per-member daily logs")
     st.caption(
         f"Read from `{cfg.log_dir}/`. These files are committed to git by the "

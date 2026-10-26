@@ -11,7 +11,10 @@ run:
   mode: analyse            # analyse | execute
   require_human_approval: true
   demo_mode: false
-  max_llm_symbols: 12      # crew cost is ~2 requests per symbol + 4
+  # Crew cost is ~2 requests per symbol + 4. With three students sharing one
+  # free-tier quota, 12 symbols each starved the students who ran later, so
+  # this is 8: ~20 requests per student, ~60 per run.
+  max_llm_symbols: 8
   lookback_days: 400       # enough to seed EMA200 and 60-bar statistics
   model_run_dir: model-run
   log_dir: trading-logs
@@ -96,6 +99,12 @@ llm:
   temperature: 0.2
   max_retries: 8           # free tiers return 429; honour Retry-After
   timeout_seconds: 180
+  # HARD wall-clock budget for the whole agent crew, per student. When the
+  # free tier rate-limits, 8 retries x 180s can outlast the CI job's own
+  # timeout, and the job is then killed before it can write its daily-log
+  # row. Exceeding this budget abandons the crew and falls back to the rule
+  # engine, so a run always finishes and always logs.
+  crew_budget_seconds: 420
   # When the LLM is unavailable, unauthorised, rate-limited or returns empty
   # content, fall back to the deterministic rule engine.  Every fallback is
   # announced loudly — never silently.
@@ -105,21 +114,24 @@ llm:
 # and FALSE as booleans. Unquoted, ON (ON Semiconductor) parses as `true`.
 students:
   - id: student_1
-    name: Student 1
+    name: Shivika Khanna
+    roll_no: "065049"
     key_env: ALPACA_API_KEY_1
     secret_env: ALPACA_SECRET_KEY_1
     starting_equity: 100000.0
     high_beta: ["TSLA", "NVDA", "PLTR", "COIN", "SMCI"]
     diversified: ["AAPL", "MSFT", "JNJ", "JPM", "XOM", "PG", "V", "CAT", "UNH"]
   - id: student_2
-    name: Student 2
+    name: Kanika Mittal
+    roll_no: "065030"
     key_env: ALPACA_API_KEY_2
     secret_env: ALPACA_SECRET_KEY_2
     starting_equity: 100000.0
     high_beta: ["AMD", "MRNA", "ENPH", "RIVN", "DKNG"]
     diversified: ["GOOGL", "AMZN", "KO", "BAC", "CVX", "HD", "MRK", "HON", "COST"]
   - id: student_3
-    name: Student 3
+    name: Sharvi Sood
+    roll_no: "065047"
     key_env: ALPACA_API_KEY_3
     secret_env: ALPACA_SECRET_KEY_3
     starting_equity: 100000.0

@@ -93,11 +93,17 @@ def lerp(timid: float, aggressive: float, aggression: float) -> float:
 class StudentConfig:
     id: str
     name: str
+    roll_no: str
     key_env: str
     secret_env: str
     starting_equity: float
     high_beta: List[str] = field(default_factory=list)
     diversified: List[str] = field(default_factory=list)
+
+    @property
+    def label(self) -> str:
+        """Name plus roll number, for anything a human reads."""
+        return f"{self.name} ({self.roll_no})" if self.roll_no else self.name
 
     @property
     def symbols(self) -> List[str]:
@@ -155,6 +161,7 @@ class LLMConfig:
     temperature: float = 0.2
     max_retries: int = 8
     timeout_seconds: int = 180
+    crew_budget_seconds: int = 420
     fallback_to_rule_engine: bool = True
     base_url: str = ""
     api_key: str = ""
@@ -256,6 +263,9 @@ def resolve_llm(cfg_block: Mapping[str, Any]) -> LLMConfig:
         max_retries=env_int("LLM_MAX_RETRIES", int(cfg_block.get("max_retries", 8))),
         timeout_seconds=env_int(
             "LLM_TIMEOUT_SECONDS", int(cfg_block.get("timeout_seconds", 180))
+        ),
+        crew_budget_seconds=env_int(
+            "LLM_CREW_BUDGET_SECONDS", int(cfg_block.get("crew_budget_seconds", 420))
         ),
         fallback_to_rule_engine=env_bool(
             "LLM_FALLBACK_TO_RULE_ENGINE",
@@ -374,6 +384,7 @@ def load_config(path: Optional[str] = None, load_env: bool = True) -> AppConfig:
         StudentConfig(
             id=clean(s.get("id")),
             name=clean(s.get("name")) or clean(s.get("id")),
+            roll_no=clean(s.get("roll_no")),
             key_env=clean(s.get("key_env")),
             secret_env=clean(s.get("secret_env")),
             starting_equity=float(s.get("starting_equity", risk.starting_equity)),

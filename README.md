@@ -80,7 +80,7 @@ pytest
 | `python scripts/test_llm.py --list-models` | List the models **your** account can see |
 | `python scripts/run_mcp_server.py` | Run the MCP server on stdio |
 | `streamlit run dashboard/app.py` | The control panel |
-| `pytest` | 258 tests |
+| `pytest` | 297 tests |
 
 ---
 
@@ -412,9 +412,18 @@ validates the MCP layer when the LLM is down.
 
 - `max_retries` defaults to 8 and is passed to the OpenAI SDK, which honours
   `Retry-After` on 429 — free tiers return them constantly.
-- `MAX_LLM_SYMBOLS` (default 12) caps how many symbols reach the crew. The
-  crew costs roughly **2 requests per symbol + 4**, so 12 symbols ≈ 28
-  requests. Symbols beyond the cap keep their rule-engine decision.
+- `MAX_LLM_SYMBOLS` (default 8) caps how many symbols reach the crew. The
+  crew costs roughly **2 requests per symbol + 4**, so 8 symbols ≈ 20
+  requests, about 60 across the three students. At 12 each, the student who
+  ran last was starved of quota. Symbols beyond the cap keep their
+  rule-engine decision.
+- `crew_budget_seconds` (default 420) is a **hard wall-clock budget** for the
+  whole crew, per student. When a provider rate-limits, 8 retries at up to
+  180s each can outlast the CI job's own timeout, and the job is then killed
+  *before* it writes its daily-log row — which is how one team member
+  silently stopped being logged for three days. Exceeding the budget
+  abandons the crew and falls back, so a run always finishes and always
+  logs.
 - Small models loop and then return empty content, which CrewAI raises as
   *"Invalid response from LLM call - None or empty"*. `llm.is_empty_response_error`
   detects it and the run falls back rather than failing.
@@ -535,12 +544,19 @@ Two guarantees, both tested:
 
   | Cron (UTC) | IST | US Eastern | What it does |
   | --- | --- | --- | --- |
-  | `30 19 * * 1-5` | 01:00 next day | 15:30 EDT / 14:30 EST — **market open** | The trading run. Full analysis, places orders. |
+  | `45 14 * * 1-5` | 20:15 same day | 10:45 EDT / 09:45 EST — **market open** | The trading run. Full analysis, places orders. |
   | `30 21 * * 1-5` | 03:00 next day | 17:30 EDT / 16:30 EST — **market closed** | Closing-equity snapshot. `--no-llm`, no orders, zero LLM quota. |
 
   Both times are deliberately far from the EDT/EST boundary, so they stay on
   the correct side of the opening and closing bells when the US clocks change
-  in March and November.
+  in March and November. The trading run sits early in the session on
+  purpose: GitHub's scheduler is best-effort and has delayed a run by over
+  three hours, so 14:45 UTC leaves roughly five hours of headroom before the
+  closing bell.
+
+  Each cron gets its own `concurrency` group. A single shared group meant a
+  delayed trading run was still going when the snapshot fired, and the
+  snapshot queued behind it.
 
   Plus `workflow_dispatch` with inputs for `mode`, `students`, `model`,
   `max_llm_symbols` and `aggression`.
@@ -583,7 +599,7 @@ Actions → **Variables**). Delete it, or set it to `execute`, to resume.
 
 ### `.github/workflows/tests.yml`
 
-- `pytest` on Python **3.11 and 3.12**, on every push and PR.
+- `pytest` (297 tests) on Python **3.11 and 3.12**, on every push and PR.
 - Runs the **demo pipeline end to end** and asserts the agent artefacts and
   all six log files were produced, and that no demo artefact claims live data.
 - Starts the **MCP server** and asserts every tool is strict-mode safe.
@@ -651,7 +667,7 @@ invented, and the news agent's instructions say so explicitly.
 ## Testing
 
 ```bash
-pytest                      # 258 tests
+pytest                      # 297 tests
 pytest -m slow              # the live MCP server and the real-crew integration
 ```
 
@@ -696,7 +712,7 @@ I built this in a sandbox whose egress policy blocks every external host.
 
 ### Verified by actually running it
 
-- **258 tests pass** on Python 3.12.
+- **297 tests pass** on Python 3.12.
 - **Indicators against hand calculations.** RSI(3) = 78.333333 and ATR(3) =
   2.333333 on worked examples, matching to 1e-6.
 - **The MCP server started as a real subprocess** and all 10 tools called over

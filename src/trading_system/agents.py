@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -29,6 +31,52 @@ from .mcp_client import MCPExtraMissing, crewai_tools_from_mcp
 from .run_logger import RunLogger
 
 log = logging.getLogger(__name__)
+
+class CrewBudgetExceeded(RuntimeError):
+    """The crew outran its wall-clock budget and was abandoned.
+
+    Free LLM tiers rate-limit hard. With retries honouring Retry-After, a
+    single student's crew can outlast the CI job's own timeout, and the job is
+    then killed before it writes its daily-log row — which is exactly how one
+    team member silently stopped being logged. Bounding the crew guarantees
+    every run reaches the logging step.
+    """
+
+
+def kickoff_within_budget(crew, budget_seconds: int):
+    """Run ``crew.kickoff()``, abandoning it if it outruns the budget.
+
+    The work runs on a DAEMON thread so that abandoning it cannot keep the
+    process alive at exit. ``ThreadPoolExecutor`` is unsuitable here: its
+    worker threads are joined at interpreter shutdown, so an abandoned crew
+    would hang the run instead of ending it.
+    """
+    box: Dict[str, Any] = {}
+
+    def _work() -> None:
+        try:
+            box["output"] = crew.kickoff()
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the caller
+            box["error"] = exc
+
+    effective = max(30, int(budget_seconds))
+    started = time.monotonic()
+    worker = threading.Thread(target=_work, name="crew-kickoff", daemon=True)
+    worker.start()
+    worker.join(timeout=effective)
+
+    if worker.is_alive():
+        raise CrewBudgetExceeded(
+            f"the agent crew exceeded its {effective}s budget and was "
+            f"abandoned (most often the free LLM tier rate-limiting). Falling "
+            f"back to the deterministic rule engine so the run still completes "
+            f"and still logs."
+        )
+    if "error" in box:
+        raise box["error"]
+    log.info("crew finished in %.1fs (budget %ss)", time.monotonic() - started, effective)
+    return box.get("output")
+
 
 AGENT_NAMES = [
     "Market Data Agent",
@@ -342,7 +390,7 @@ def run_crew(
             process=Process.sequential,
             verbose=False,
         )
-        output = crew.kickoff()
+        output = kickoff_within_budget(crew, cfg.llm.crew_budget_seconds)
         result.raw_output = str(output)
 
         for name, task in zip(AGENT_NAMES, tasks):
@@ -377,6 +425,11 @@ def run_crew(
     except MCPExtraMissing as exc:
         result.fallback_reason = f"crewai-tools[mcp] missing: {exc}"
         result.errors.append(str(exc))
+        return result
+    except CrewBudgetExceeded as exc:
+        result.fallback_reason = str(exc)
+        result.errors.append(str(exc))
+        log.warning("crew over budget: %s", exc)
         return result
     except Exception as exc:
         if is_empty_response_error(exc):

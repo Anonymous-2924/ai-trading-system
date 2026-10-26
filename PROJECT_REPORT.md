@@ -3,7 +3,7 @@
 ### Project Progress Report
 
 **Submitted to:** [Professor's name]
-**Date:** 23 October 2026
+**Date:** 26 October 2026
 **Repository:** https://github.com/Anonymous-2924/ai-trading-system
 
 **Team**
@@ -226,10 +226,10 @@ Everything runs on GitHub Actions without anyone starting it. There are two sche
 
 | Time (UTC) | Time (IST) | Purpose |
 |---|---|---|
-| 19:30 | 01:00 next day | Full analysis and trading |
+| 14:45 | 20:15 same day | Full analysis and trading |
 | 21:30 | 03:00 next day | Records closing equity only; cannot trade |
 
-The trading run is timed to fall inside US market hours so that orders fill in the same session rather than queuing overnight. We chose times that stay on the correct side of the opening and closing bells in both US daylight and standard time, since the US clocks change in early November during our trading period.
+The trading run is timed to fall inside US market hours so that orders fill in the same session rather than queuing overnight. We chose times that stay on the correct side of the opening and closing bells in both US daylight and standard time, since the US clocks change in early November during our trading period. We also placed the trading run early in the session rather than late, because GitHub's scheduler is only best-effort and delayed one of our runs by more than three hours; starting at 14:45 UTC leaves about five hours of margin before the market closes.
 
 The three accounts run one at a time rather than together. Each uses its own Alpaca keys, and running them simultaneously would exhaust the free AI quota immediately.
 
@@ -241,22 +241,22 @@ We also built a Streamlit dashboard for manual use. It allows entering Alpaca ke
 
 ## 6. Results So Far
 
-Trading began on 17 October. The figures below are as of 23 October, which is four completed trading days.
+Trading began on 17 October. The figures below are as of 26 October, covering five completed trading days.
 
 | Member | Starting | Current equity | Profit / Loss | Return | Positions | Days logged |
 |---|---|---|---|---|---|---|
-| Shivika Khanna | $100,000 | $101,129.41 | +$1,129.41 | +1.13% | 8 | 6 |
-| Kanika Mittal | $100,000 | $98,863.14 | −$1,136.86 | −1.14% | 9 | 5 |
+| Shivika Khanna | $100,000 | $100,571.87 | +$571.87 | +0.57% | 8 | 7 |
+| Kanika Mittal | $100,000 | $98,801.11 | −$1,198.89 | −1.20% | 10 | 6 |
 | Sharvi Sood | $100,000 | $100,135.28 | +$135.28 | +0.14% | 5 | 2 |
-| **Group** | **$300,000** | **$300,127.83** | **+$127.83** | **+0.04%** | **22** | |
+| **Group** | **$300,000** | **$299,508.26** | **−$491.74** | **−0.16%** | **23** | |
 
-The group as a whole is close to flat. Shivika's portfolio is up just over 1%, Kanika's is down by a similar amount, and Sharvi's is slightly up.
+The group as a whole is close to flat, slightly below where it started. Shivika's portfolio is up about half a percent, Kanika's is down just over one percent, and Sharvi's is marginally up.
 
 Kanika's account was up $1,720 on 22 October and then lost $2,813 in a single day, which is what moved it into negative territory. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it actually happen is a useful reminder of what the aggression setting means in practice.
 
 Two honest caveats about these numbers:
 
-Sharvi's account has only two logged days compared with six and five for the others, so her figure of $100,135 is from 20 October and is now three days stale. Her actual current position is almost certainly different. This is a logging problem we are still investigating, not a trading problem — her positions and orders are real and visible in her Alpaca account. We explain this further in section 7.
+Sharvi's account has only two logged days compared with seven and six for the others, so her figure of $100,135 is from 20 October and is stale. Her actual current position is almost certainly different. This was a logging problem rather than a trading problem — her positions and orders are real and visible in her Alpaca account. We have now found and fixed the cause, which is described in section 7; her log should fill in from the next scheduled run onwards.
 
 More importantly, four trading days tells us essentially nothing about whether the strategy is any good. The differences between the three of us at this point are much more likely to reflect which stocks happened to be in whose portfolio than any difference in skill. We would not draw conclusions about performance from this sample.
 
@@ -274,6 +274,18 @@ We fixed it by quoting every stock symbol in the configuration file, and by maki
 
 We would not have found this without running live. All our tests passed beforehand.
 
+**One team member silently stopped being logged.** This was the most serious problem we found, and the hardest to see, because nothing reported an error.
+
+Sharvi's log stopped updating after 20 October while the other two carried on. Her trades were still happening and were visible in her Alpaca account, but no daily record was being written.
+
+The cause turned out to be a chain of three things. The three accounts run one after another in a fixed order, sharing a single free AI quota. Shivika runs first and uses most of it. By the time Sharvi's turn came, every AI request was being rate-limited, and our retry settings — eight attempts, each allowed up to 180 seconds — meant her run could spend well over half an hour simply waiting. The automation job has its own 40-minute limit, so GitHub killed the job before it ever reached the step that writes the log.
+
+We had designed the system so that a run which cannot read the account still writes a row, precisely so gaps would be visible. That protection was useless here, because the process was killed outright rather than failing gracefully.
+
+We fixed it in three ways. First, we added a hard time budget for the AI stage — if it has not finished within seven minutes, it is abandoned and the deterministic engine takes over, so a run can no longer overrun its job. Second, we reduced the number of stocks sent to the AI from 12 to 8 per person, which brings the whole team inside the free quota instead of starving whoever goes last. Third, we gave each scheduled run its own queue so a delayed trading run no longer blocks the evening snapshot behind it.
+
+We verified the fix by simulating a crew that hangs indefinitely and confirming that the run still completed, still fell back with an announcement, and still wrote its log row.
+
 **Market closed on the first run.** Our first run was on a Saturday. Alpaca accepted all 16 orders across the three accounts but they stayed queued until Monday's open. For a while we thought the system was broken because nothing appeared to be happening. It was working correctly; we were just looking at it on a non-trading day.
 
 **Looking at the wrong Alpaca account.** Related to the above, one of us checked an Alpaca dashboard that showed no orders at all while another showed them correctly. The orders had gone to a different paper account than the one open in the browser. To settle questions like this quickly we wrote a diagnostic tool that prints, for each set of keys, the exact Alpaca account number those keys belong to along with every order on file and its status. It is read-only and places no orders.
@@ -290,7 +302,7 @@ We would not have found this without running live. All our tests passed beforeha
 
 ## 8. Testing
 
-We have 272 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
+We have 297 automated tests covering the indicators (including the hand calculations), the scoring logic, the MACD behaviour on declining stocks, the paper trading safety checks against 21 hostile addresses, the risk limits, the configuration loading, the MCP server tools, the sentiment scoring, the daily logging, and the full pipeline from end to end.
 
 Beyond the unit tests we also:
 

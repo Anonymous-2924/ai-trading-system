@@ -18,15 +18,19 @@ on:
     # early November and early March; a cron that is correct in one is often
     # wrong in the other, so neither of these sits near a boundary.
     #
-    #   19:30 UTC  =  15:30 ET (EDT)  /  14:30 ET (EST)   <- market OPEN in both
+    #   14:45 UTC  =  10:45 ET (EDT)  /  09:45 ET (EST)   <- market OPEN in both
     #   21:30 UTC  =  17:30 ET (EDT)  /  16:30 ET (EST)   <- market CLOSED in both
     #
-    # In IST (UTC+5:30) that is 01:00 and 03:00 the following morning.
+    # In IST (UTC+5:30) that is 20:15 the same evening, and 03:00 the
+    # following morning.
     # ---------------------------------------------------------------------
 
-    # THE TRADING RUN. Fires while the US market is open, so market orders
-    # fill in the same session instead of queuing overnight.
-    - cron: "30 19 * * 1-5"
+    # THE TRADING RUN. Fires early in the US session on purpose. GitHub's
+    # scheduler is best-effort and has delayed us by over three hours; at
+    # 19:30 UTC that pushed the run past the closing bell and the orders
+    # queued overnight. 14:45 UTC leaves roughly five hours of headroom
+    # before the market shuts, in either US time zone.
+    - cron: "45 14 * * 1-5"
 
     # THE END-OF-DAY SNAPSHOT. Analysis is skipped entirely (--no-llm, no
     # orders); this exists only to append the closing equity to each member's
@@ -60,8 +64,11 @@ permissions:
   contents: write
 
 concurrency:
-  # One trading run at a time: concurrent runs would fight over the logs.
-  group: trading-analysis
+  # One run at a time PER SCHEDULE, not across all of them. A single shared
+  # group meant a delayed trading run was still going when the evening
+  # snapshot fired, so the snapshot queued behind it and the backlog grew.
+  # A manual dispatch gets its own group and is never made to wait.
+  group: trading-${{ github.event.schedule || github.run_id }}
   cancel-in-progress: false
 
 env:
