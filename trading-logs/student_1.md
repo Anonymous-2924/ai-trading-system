@@ -6,14 +6,14 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 11 |
-| Latest equity | $100,597.60 |
-| Total P&L | $597.60 |
-| Total P&L % | +0.60% |
+| Runs recorded | 12 |
+| Latest equity | $100,938.83 |
+| Total P&L | $938.83 |
+| Total P&L % | +0.94% |
 | Best day | +0.64% on 2026-10-20 |
 | Worst day | -0.58% on 2026-10-23 |
 | Peak equity | $101,197.31 on 2026-10-23 |
-| Up days | 6 |
+| Up days | 7 |
 | Down days | 4 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
@@ -36,6 +36,7 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-23 | 00:04 | $101,197.31 | $12,607.02 | $289,719.90 | $276.77 | +0.27% | $1,197.31 | +1.20% | 8 | 8/4/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-23 | 22:26 | $100,571.87 | $12,606.62 | $277,422.48 | $-584.34 | -0.58% | $571.87 | +0.57% | 8 | 1/4/9 | 1 | ALPACA_LIVE | crewai_agents | execute |
 | 2026-10-23 | 23:55 | $100,597.60 | $12,606.62 | $277,498.17 | $-558.61 | -0.55% | $597.60 | +0.60% | 8 | 6/4/4 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
+| 2026-10-27 | 00:41 | $100,938.83 | $1,922.05 | $275,695.52 | $361.24 | +0.36% | $938.83 | +0.94% | 9 | 8/4/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 
 ## Notes
 
@@ -50,3 +51,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; PLTR: LLM overrode the rule engine BUY -> HOLD (LOW) — Buy signal exists but position already held; no additional trade needed.; AAPL: LLM overrode the rule engine BUY -> HOLD (LOW) — Buy signal present but existing long position means no new order.; JNJ: LLM overrode the rule engine HOLD -> BUY (HIGH) — Sizing module identified a high‑conviction buying opportunity despite a neutral engine hold.; XOM: LLM overrode 
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
+- OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 12 trade(s), mean excess +1.11%

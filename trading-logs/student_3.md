@@ -6,14 +6,14 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 11 |
-| Latest equity | $100,963.10 |
-| Total P&L | $963.10 |
-| Total P&L % | +0.96% |
+| Runs recorded | 12 |
+| Latest equity | $101,311.61 |
+| Total P&L | $1,311.61 |
+| Total P&L % | +1.31% |
 | Best day | +0.99% on 2026-10-22 |
 | Worst day | -0.79% on 2026-10-23 |
 | Peak equity | $101,608.25 on 2026-10-22 |
-| Up days | 6 |
+| Up days | 7 |
 | Down days | 4 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
@@ -36,6 +36,7 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-23 | 00:07 | $101,554.85 | $2,619.84 | $287,497.39 | $947.26 | +0.94% | $1,554.85 | +1.55% | 10 | 7/4/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-23 | 22:31 | $100,939.92 | $20,735.06 | $299,538.78 | $-802.01 | -0.79% | $939.92 | +0.94% | 8 | 1/0/13 | 1 | ALPACA_LIVE | crewai_agents | execute |
 | 2026-10-23 | 23:58 | $100,963.10 | $20,735.06 | $299,541.30 | $-778.84 | -0.77% | $963.10 | +0.96% | 8 | 7/4/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
+| 2026-10-27 | 00:43 | $101,311.61 | $12,798.18 | $299,030.31 | $386.14 | +0.38% | $1,311.61 | +1.31% | 9 | 7/5/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 
 ## Notes
 
@@ -50,3 +51,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $18,246 of freed capital is available to this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; AFRM: LLM overrode the rule engine HOLD -> BUY (MEDIUM) — Medium conviction buy based on risk-sized candidate.; MARA: LLM overrode the rule engine SELL -> HOLD (LOW) — No buy signal.; ON: LLM overrode the rule engine SELL -> HOLD (LOW) — No buy signal.; META: LLM overrode the rule engine SELL -> HOLD (LOW) — No buy signal.; ORCL: LLM overrode the rule engine SELL -> HOLD (LOW) — No buy signal.; PEP: LLM overrode th
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.
+- OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $5,665 of freed capital is available to this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess +1.96%
