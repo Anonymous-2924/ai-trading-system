@@ -289,18 +289,20 @@ It has four tabs. The first shows the group: all three accounts side by side, co
 
 ## 6. Results So Far
 
-Trading began on 17 October. The figures below are **each account's last recorded run, not a live reading**. The most recent is 23 October, the last trading day before this report; the market was closed over the weekend. Our Alpaca accounts will have moved since, because equity is only written down when a run happens.
+Trading began on 17 October. The figures below are **each account's last recorded run, not a live reading**: 27 October, across seven trading days and twelve recorded runs. Our Alpaca accounts will have moved since, because equity is only written down when a run happens.
 
 | Member | Starting | Equity at last run | Profit / Loss | Return | Positions | Runs logged |
 |---|---|---|---|---|---|---|
-| Shivika Khanna | $100,000 | $100,597.60 | +$597.60 | +0.60% | 8 | 11 |
-| Sharvi Sood | $100,000 | $98,801.11 | −$1,198.89 | −1.20% | 10 | 11 |
-| Kanika Mittal | $100,000 | $100,963.10 | +$963.10 | +0.96% | 8 | 11 |
-| **Group** | **$300,000** | **$300,361.81** | **+$361.81** | **+0.12%** | **26** | |
+| Shivika Khanna | $100,000 | $100,938.83 | +$938.83 | +0.94% | 9 | 12 |
+| Sharvi Sood | $100,000 | $98,014.45 | −$1,985.55 | −1.99% | 7 | 12 |
+| Kanika Mittal | $100,000 | $101,311.61 | +$1,311.61 | +1.31% | 9 | 12 |
+| **Group** | **$300,000** | **$300,264.89** | **+$264.89** | **+0.09%** | **25** | |
 
-The group as a whole is close to flat, very slightly ahead of where it started. Shivika's portfolio is up about six-tenths of a percent, Kanika's is up nearly one percent, and Sharvi's is down just over one percent.
+The group as a whole is close to flat, very slightly ahead of where it started. Kanika's portfolio is up about one and a third percent, Shivika's is up just under one percent, and Sharvi's is down about two percent.
 
-Sharvi's account was up $1,720 on 22 October and then lost $2,813 in a single day, which is what moved it into negative territory. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it actually happen is a useful reminder of what the aggression setting means in practice.
+The spread between the three accounts is the more interesting figure. All three run identical software with identical settings, and the only difference between them is which fourteen stocks they hold. A gap of more than three percentage points after seven trading days is a reminder of how much of a short-term result comes from the selection rather than from the method.
+
+Sharvi's account is the one that has struggled. It is also the one that has fallen furthest below its own peak, at 3.55%, against 0.53% and 0.63% for the other two, and its daily swings have been roughly twice as large. This is the aggressive position sizing working in the direction we did not want. With roughly 11% of the account in each position, a bad day in two or three holdings produces a swing of this size. We expected this volatility when we chose the settings; seeing it happen is a useful reminder of what the aggression setting means in practice.
 
 ### Did we beat the market?
 
@@ -308,11 +310,13 @@ Equity alone cannot answer that, because a rising market lifts everything. Measu
 
 | Member | Trades measured | Mean return | Versus the market | After adjusting for risk | Win rate |
 |---|---|---|---|---|---|
-| Shivika Khanna | 12 (8 still open) | +0.54% | **+1.26%** | **+1.65%** | 66.7% |
-| Sharvi Sood | 10 (10 still open) | −0.91% | −0.03% | −0.23% | 50.0% |
-| Kanika Mittal | 10 (8 still open) | +1.08% | **+1.98%** | **+1.72%** | 60.0% |
+| Shivika Khanna | 12 (8 still open) | +0.87% | **+1.11%** | **+1.56%** | 83.3% |
+| Sharvi Sood | 10 (10 still open) | −1.72% | −1.54% | −1.63% | 50.0% |
+| Kanika Mittal | 10 (8 still open) | +1.62% | **+1.96%** | **+2.00%** | 70.0% |
 
-Two of the three accounts are ahead of the market on the stocks they chose, and still ahead after adjusting for the fact that we deliberately chose jumpier-than-average stocks — which is the stricter test.
+Two of the three accounts are ahead of the market on the stocks they chose, and still ahead after adjusting for the fact that we deliberately chose jumpier-than-average stocks — which is the stricter test. The third is behind on both measures.
+
+These figures move from run to run, which is exactly why we record them after every run rather than once at the end. Between 26 and 27 October alone, Sharvi's excess return fell from roughly flat to −1.54%, while the other two barely moved. A single number quoted at the end of the project would have hidden that entirely.
 
 We want to be careful about how much weight this carries. Ten to twelve trades each is far below the thirty that would be a bare minimum for the numbers to mean anything, and realistically it takes hundreds. At this sample size a coin toss could produce the same result. The honest answer to "is this skill or luck?" is that we cannot yet tell, and we would rather say so than present these figures as a success.
 
@@ -320,9 +324,9 @@ The third measure we built, which asks whether our scores actually predicted the
 
 Two honest caveats about these numbers:
 
-These figures are now complete for all three of us. Until very recently Kanika's log held only two rows against eleven for the others, which made her account look as though it had barely traded. That was the records fault described in section 7, not a trading fault, and the missing rows have since been read back out of the saved attachments of each run. All three accounts now have the same eleven runs recorded over the same six trading days.
+These figures are now complete for all three of us. Until very recently Kanika's log held only two rows against eleven for the others, which made her account look as though it had barely traded. That was the records fault described in section 7, not a trading fault, and the missing rows have since been read back out of the saved attachments of each run. All three accounts now have the same twelve runs recorded over the same seven trading days.
 
-More importantly, four trading days tells us essentially nothing about whether the strategy is any good. The differences between the three of us at this point are much more likely to reflect which stocks happened to be in whose portfolio than any difference in skill. We would not draw conclusions about performance from this sample.
+More importantly, seven trading days tells us essentially nothing about whether the strategy is any good. The differences between the three of us at this point are much more likely to reflect which stocks happened to be in whose portfolio than any difference in skill. We would not draw conclusions about performance from this sample.
 
 ## 7. Problems We Encountered
 
@@ -385,7 +389,7 @@ Beyond the unit tests we also:
 
 We want to be clear about what this project does and does not demonstrate.
 
-**We have not shown the strategy is profitable.** We have tested that the system behaves sensibly — a crashing stock produces a sell, a rising stock produces a buy, a flat stock produces a hold. We have not backtested it over historical data, and four trading days cannot distinguish skill from luck. Nothing in our results should be read as evidence that this approach beats the market.
+**We have not shown the strategy is profitable.** We have tested that the system behaves sensibly — a crashing stock produces a sell, a rising stock produces a buy, a flat stock produces a hold. We have not backtested it over historical data, and seven trading days cannot distinguish skill from luck. Nothing in our results should be read as evidence that this approach beats the market.
 
 **The high-beta stock list is representative rather than verified.** As noted in section 3, we have not checked it against the official index membership.
 
