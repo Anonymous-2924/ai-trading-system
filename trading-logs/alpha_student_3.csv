@@ -2,3 +2,4 @@ timestamp_utc,date,student_id,run_label,trades,open_trades,closed_trades,mean_re
 2026-10-26T10:29:49+00:00,2026-10-26,student_3,backfill,10,8,2,1.0821,1.9811,1.7247,932.1973,60.0000,,,SPY,ALPACA_LIVE,"backfilled from Alpaca order history: the composite score at entry was not recorded for these trades, so the information coefficient cannot be computed for them"
 2026-10-27T00:43:59+00:00,2026-10-27,student_3,snapshot,10,8,2,1.6244,1.9609,1.9955,1410.4193,70.0000,,,SPY,ALPACA_LIVE,
 2026-10-28T00:42:25+00:00,2026-10-28,student_3,snapshot,10,8,2,1.6790,1.5489,1.8250,1319.6924,50.0000,,,SPY,ALPACA_LIVE,
+2026-10-29T01:11:26+00:00,2026-10-29,student_3,snapshot,10,8,2,1.8051,1.4061,1.8213,1314.1955,50.0000,,,SPY,ALPACA_LIVE,
