@@ -6,14 +6,14 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 14 |
-| Latest equity | $99,245.23 |
-| Total P&L | $-754.77 |
-| Total P&L % | -0.75% |
-| Best day | +1.11% on 2026-10-20 |
+| Runs recorded | 15 |
+| Latest equity | $100,900.42 |
+| Total P&L | $900.42 |
+| Total P&L % | +0.90% |
+| Best day | +2.32% on 2026-10-30 |
 | Worst day | -2.77% on 2026-10-23 |
 | Peak equity | $101,720.09 on 2026-10-22 |
-| Up days | 7 |
+| Up days | 8 |
 | Down days | 6 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
@@ -39,6 +39,7 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-27 | 00:42 | $98,014.45 | $17,586.08 | $279,059.70 | $-611.66 | -0.62% | $-1,985.55 | -1.99% | 7 | 6/5/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-28 | 00:41 | $98,117.25 | $17,585.74 | $278,594.03 | $-146.55 | -0.15% | $-1,882.75 | -1.88% | 7 | 6/5/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-10-29 | 01:10 | $99,245.23 | $17,585.74 | $280,938.09 | $1,013.95 | +1.03% | $-754.77 | -0.75% | 7 | 6/4/4 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
+| 2026-10-30 | 01:16 | $100,900.42 | $17,585.74 | $285,277.74 | $2,288.01 | +2.32% | $900.42 | +0.90% | 7 | 7/5/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 
 ## Notes
 
@@ -56,3 +57,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess -1.54%
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; exits processed first; $7,629 of freed capital is available to this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess -1.67%
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess -1.79%
+- OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess -0.37%
