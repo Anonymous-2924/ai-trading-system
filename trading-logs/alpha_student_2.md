@@ -11,10 +11,10 @@ Appended once per run, beside the daily log. Measures whether the trades we made
 | Metric | Value |
 | --- | --- |
 | Trades measured | 10 (10 still open) |
-| Mean return | +2.37% |
-| Mean excess vs SPY | +4.27% |
-| Mean Jensen's alpha | +3.90% |
-| Total P&L on these trades | $1,359.45 |
+| Mean return | +2.04% |
+| Mean excess vs SPY | +3.63% |
+| Mean Jensen's alpha | +3.31% |
+| Total P&L on these trades | $984.89 |
 | Win rate | 70.00% |
 | Signal IC | n/a |
 
@@ -31,6 +31,7 @@ Appended once per run, beside the daily log. Measures whether the trades we made
 | 2026-10-30 | 01:16 | snapshot | 10 | 10 | +0.01% | -0.37% | -0.37% | 50.00% | n/a | $263.39 | ALPACA_LIVE |
 | 2026-10-31 | 00:58 | snapshot | 10 | 10 | +0.75% | +2.16% | +1.87% | 70.00% | n/a | $752.38 | ALPACA_LIVE |
 | 2026-11-03 | 03:02 | snapshot | 10 | 10 | +2.37% | +4.27% | +3.90% | 70.00% | n/a | $1,359.45 | ALPACA_LIVE |
+| 2026-11-04 | 01:35 | snapshot | 10 | 10 | +2.04% | +3.63% | +3.31% | 70.00% | n/a | $984.89 | ALPACA_LIVE |
 
 ## Notes
 
