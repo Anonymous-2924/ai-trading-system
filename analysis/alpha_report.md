@@ -1,6 +1,6 @@
 # Alpha attribution
 
-Generated 2026-11-05 00:32 UTC from `trading-logs/trades_*.csv`.
+Generated 2026-11-05 01:42 UTC from `trading-logs/trades_*.csv`.
 
 Three measures, answering three different questions:
 

@@ -6,14 +6,14 @@ Appended once per run by the trading pipeline and committed back to the reposito
 
 | Metric | Value |
 | --- | --- |
-| Runs recorded | 18 |
-| Latest equity | $100,824.41 |
-| Total P&L | $824.41 |
-| Total P&L % | +0.82% |
-| Best day | +2.32% on 2026-10-30 |
+| Runs recorded | 19 |
+| Latest equity | $104,635.22 |
+| Total P&L | $4,635.22 |
+| Total P&L % | +4.64% |
+| Best day | +3.47% on 2026-11-05 |
 | Worst day | -2.77% on 2026-10-23 |
-| Peak equity | $101,720.09 on 2026-10-22 |
-| Up days | 10 |
+| Peak equity | $104,635.22 on 2026-11-05 |
+| Up days | 11 |
 | Down days | 7 |
 | Flat days | 1 |
 | Last data source | ALPACA_LIVE |
@@ -43,10 +43,10 @@ Appended once per run by the trading pipeline and committed back to the reposito
 | 2026-10-31 | 00:58 | $101,158.44 | $17,585.74 | $285,790.77 | $765.11 | +0.76% | $1,158.44 | +1.16% | 7 | 7/6/1 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-11-03 | 03:02 | $101,540.06 | $17,585.74 | $286,974.91 | $402.55 | +0.40% | $1,540.06 | +1.54% | 7 | 8/5/1 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 | 2026-11-04 | 01:35 | $100,824.41 | $17,585.74 | $284,578.18 | $-811.11 | -0.80% | $824.41 | +0.82% | 7 | 7/4/3 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
+| 2026-11-05 | 01:40 | $104,635.22 | $17,585.74 | $292,240.14 | $3,513.48 | +3.47% | $4,635.22 | +4.64% | 7 | 9/3/2 | 0 | ALPACA_LIVE | deterministic_rule_engine | analyse |
 
 ## Notes
 
-- OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; MRNA: LLM overrode the rule engine BUY -> HOLD (VERY_HIGH) — already held; no new position; RIVN: LLM overrode the rule engine SELL -> HOLD (VERY_HIGH) — sell signal but not held, no action; CVX: LLM overrode the rule engine BUY -> HOLD (VERY_HIGH) — already held; no new position; BAC: LLM overrode the rule engine SELL -> HOLD (VERY_HIGH) — sell signal but not held, no action; KO: LLM overrode the rule engine BUY -
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 0% of this run's entries, below the 30% mandate — the signal engine did not produce enough high-beta BUYs today; the mandate is measured on the whole book over the trading period, not on a single run; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=exec
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; MRNA: LLM overrode the rule engine BUY -> HOLD (VERY_HIGH) — Strong bullish signals across all dimensions.; CVX: LLM overrode the rule engine BUY -> HOLD (VERY_HIGH) — Robust bullish technical profile; already held.; KO: LLM overrode the rule engine BUY -> HOLD (HIGH) — Positive technical and sentiment scores; already held.; COST: LLM overrode the rule engine BUY -> HOLD (HIGH) — Favorable technical indicators; alr
 - OHLCV for 14/14 symbols in 1 HTTP request(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 0% of this run's entries, below the 30% mandate — the signal engine did not produce enough high-beta BUYs today; the mandate is measured on the whole book over the trading period, not on a single run; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=exec
@@ -61,3 +61,4 @@ Appended once per run by the trading pipeline and committed back to the reposito
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess +2.16%
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 100% of this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess +4.27%
 - OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 100% of this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess +3.63%
+- OHLCV for 14/14 symbols (plus 2 benchmark(s)) in 1 HTTP request(s); intraday bars for 14 symbol(s); 50 news article(s) in the last 48h; LLM disabled for this run (provider=none or --no-llm); the deterministic rule engine decides everything.; high-beta sleeve is 42% of this run's entries; orders NOT submitted: mode=analyse, require_human_approval=True. Submission needs mode=execute AND REQUIRE_HUMAN_APPROVAL=false.; alpha logged: 10 trade(s), mean excess +6.28%
