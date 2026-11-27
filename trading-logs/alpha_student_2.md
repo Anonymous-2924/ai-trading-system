@@ -48,6 +48,7 @@ Appended once per run, beside the daily log. Measures whether the trades we made
 | 2026-11-24 | 05:27 | snapshot | 10 | 10 | -1.10% | +4.64% | +3.63% | 40.00% | n/a | $-862.72 | ALPACA_LIVE |
 | 2026-11-25 | 04:30 | snapshot | 10 | 10 | +1.00% | +7.21% | +6.13% | 50.00% | n/a | $1,605.35 | ALPACA_LIVE |
 | 2026-11-26 | 03:43 | snapshot | 10 | 10 | +0.91% | +7.40% | +6.28% | 40.00% | n/a | $1,090.74 | ALPACA_LIVE |
+| 2026-11-27 | 03:44 | snapshot | 10 | 10 | +0.91% | +7.40% | +6.28% | 40.00% | n/a | $1,090.74 | ALPACA_LIVE |
 
 ## Notes
 
